@@ -18,11 +18,21 @@ export default function Portfolio() {
       title: "Token Streaming with Revest FNFTs",
       image: "/revest.png",
       description:
-        "For the Web3ATL hackathon, I designed and implemented a token streaming mechanism using Revest FNFTs, offering both linear and quadratic withdrawal methods. I enhanced the RevestV2 contracts by introducing a batch minting process, creating one FNFT per second from creation until time lock expiration. This approach allows users to withdraw tokens at predetermined intervals seamlessly. I developed multiple withdrawal functions to handle different streaming strategies and wrote comprehensive tests to validate functionality and ensure reliability. Additionally, I modified auxiliary components such as the lock manager and interfaces to support the new streaming features, resulting in a robust and flexible token streaming solution.",
+        "For the Web3ATL hackathon, I designed and implemented a token streaming mechanism using Revest FNFTs, offering both linear and quadratic withdrawal methods. I enhanced the RevestV2 contracts by introducing a batch minting process, creating one FNFT per second from creation until time lock expiration. This approach allows users to withdraw tokens at predetermined intervals seamlessly. I developed multiple withdrawal functions to handle different streaming strategies and wrote comprehensive tests to validate functionality and ensure reliability. Additionally, I modified auxiliary components such as the lock manager and interfaces to support the new streaming features, resulting in a robust and flexible token streaming solution. [Buidlbox Project](https://app.buidlbox.io/projects/token-str?path=projects%2Ftoken-str). Although the initial prize was $2,500, Revest's value increased before distribution, resulting in earnings of over $8,000 in Ethereum at the time.",
       links: {
         github: "https://github.com/TrentConley/RevestV2-Streaming",
         website:
           "https://app.buidlbox.io/projects/token-str?path=projects%2Ftoken-str",
+      },
+    },
+    {
+      id: 3,
+      title: "Website Development for True Persona AI",
+      image: "/persona.png",
+      description:
+        "During my contract with True Persona AI, I was responsible for developing a website quickly to support their demos showcasing how generative AI can synthesize the personalities and skills of multiple individuals to form effective consulting teams. The website has been instrumental in over a dozen demonstrations, directly contributing to a successful fundraising round for the startup. You can view the website [here](https://team-builder-v2.vercel.app/).",
+      links: {
+        website: "https://team-builder-v2.vercel.app/",
       },
     },
     // Add more projects as needed
