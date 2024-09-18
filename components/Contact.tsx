@@ -24,7 +24,7 @@ export default function Contact() {
             <label className="block mb-2 font-medium">Message</label>
             <textarea
               className="w-full p-3 rounded bg-gray-800 border border-gray-700"
-              rows="5"
+              rows={5}
               required
             ></textarea>
           </div>

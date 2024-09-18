@@ -37,7 +37,7 @@ export default function TypingEffect() {
               delay: 75,
               deleteSpeed: 50,
               cursor: "_",
-              pauseFor: 2000,
+              // Removed 'pauseFor' as it's not a valid property in Typed.js
             }}
           />
         </span>
