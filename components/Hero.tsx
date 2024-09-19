@@ -14,51 +14,9 @@ const Hero = () => {
     await loadFull(engine);
   }, []);
 
-  const particlesLoaded = useCallback(async (container: Container | null) => {
-    particlesRef.current = container;
+  const particlesLoaded = useCallback(async (container?: Container) => {
+    particlesRef.current = container || null;
   }, []);
-
-  const handleClick = useCallback(
-    (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-      const container = particlesRef.current;
-      if (container) {
-        const pos = {
-          x: event.clientX / window.innerWidth,
-          y: event.clientY / window.innerHeight,
-        };
-
-        container.particles.addParticle({
-          x: pos.x * container.canvas.size.width,
-          y: pos.y * container.canvas.size.height,
-          move: {
-            direction: "none",
-            enable: true,
-            speed: 2, // Adjust speed as desired
-            outModes: {
-              default: "destroy",
-            },
-          },
-          size: {
-            value: 3,
-            random: {
-              enable: true,
-              minimumValue: 1,
-            },
-          },
-          color: {
-            value: "#FFD700", // Changed color to gold
-          },
-          opacity: {
-            value: 0.8,
-          },
-          shape: {
-            type: "circle",
-          },
-        });
-      }
-    },
-    []
-  );
 
   const particlesOptions: ISourceOptions = {
     fullScreen: false,
@@ -124,10 +82,7 @@ const Hero = () => {
   };
 
   return (
-    <section
-      className="relative flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900"
-      onClick={handleClick} // Attach click handler to the section
-    >
+    <section className="relative flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
       {/* Particles Background */}
       <Particles
         id="tsparticles"
