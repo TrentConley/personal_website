@@ -7,17 +7,18 @@ export default function About() {
         <h2 className="text-4xl font-bold text-center mb-8">About Me</h2>
         <p className="mb-6">
           Hi! I am Georgia Tech student graduating in May 2025, planning on
-          doing my Masters in Machine Learning. I'm interested in software
-          architecture, full stack development, and machine learning
-          engineering. In my free time, I like to work on side projects,
-          practice Brazilian Jiu Jitsu, and do woodworking.
+          doing my Masters in Machine Learning (graduation May 2026). I'm
+          interested in software architecture, full stack development, machine
+          learning, and drone technology. In my free time, I like to work on
+          side projects, practice Brazilian Jiu Jitsu, and do woodworking.
         </p>
         <h3 className="text-2xl font-semibold mb-4">
           Opportunities I'm Looking For
         </h3>
         <ul className="list-disc list-inside space-y-2">
           <li>
-            Full-Stack Developer roles focusing on modern JavaScript frameworks.
+            Internships where I can collaborate with and learn from a highly
+            skilled team on challenging software or hardware projects.
           </li>
           <li>Co-founder of a high-impact startup.</li>
           <li>
