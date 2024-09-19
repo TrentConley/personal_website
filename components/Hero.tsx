@@ -1,84 +1,14 @@
-import React, { useCallback, useRef } from "react";
+import React from "react";
 import Image from "next/image";
 import Particles from "react-tsparticles";
-import { Engine, Container, ISourceOptions } from "tsparticles-engine";
-import { loadFull } from "tsparticles"; // Changed from loadSlim to loadFull
+import { Engine } from "tsparticles-engine";
+import { loadSlim } from "tsparticles-slim";
 import { motion } from "framer-motion";
 import TypingEffect from "./TypingEffect";
 
 const Hero = () => {
-  const particlesRef = useRef<Container | null>(null);
-
-  const particlesInit = useCallback(async (engine: Engine) => {
-    // Load the full tsParticles package
-    await loadFull(engine);
-  }, []);
-
-  const particlesLoaded = useCallback(async (container?: Container) => {
-    particlesRef.current = container || null;
-  }, []);
-
-  const particlesOptions: ISourceOptions = {
-    fullScreen: false,
-    background: {
-      color: {
-        value: "#1a202c", // Optional: Match the Tailwind background
-      },
-    },
-    particles: {
-      number: {
-        value: 80,
-        density: {
-          enable: true,
-          area: 800,
-        },
-      },
-      size: {
-        value: { min: 1, max: 3 },
-      },
-      move: {
-        enable: true,
-        speed: 0.1, // Reduced speed for smoother movement
-        direction: "none",
-        random: false,
-        straight: false,
-        outModes: {
-          default: "out",
-        },
-      },
-      opacity: {
-        value: 0.5,
-        random: false,
-      },
-      shape: {
-        type: "circle",
-      },
-      color: {
-        value: "#ffffff",
-      },
-    },
-    interactivity: {
-      events: {
-        onHover: {
-          enable: true,
-          mode: "repulse",
-        },
-        onClick: {
-          enable: false, // We'll handle click manually
-          mode: "repulse",
-        },
-        resize: true,
-      },
-      modes: {
-        repulse: {
-          distance: 100,
-          duration: 0.8,
-          factor: 8, // Strength of repulsion
-          speed: 1, // Speed at which particles are repulsed
-        },
-      },
-    },
-    detectRetina: true,
+  const particlesInit = async (engine: Engine) => {
+    await loadSlim(engine);
   };
 
   return (
@@ -87,8 +17,25 @@ const Hero = () => {
       <Particles
         id="tsparticles"
         init={particlesInit}
-        loaded={particlesLoaded}
-        options={particlesOptions}
+        options={{
+          fullScreen: false,
+          particles: {
+            number: { value: 80 },
+            size: { value: { min: 1, max: 3 } },
+            move: { enable: true, speed: 0.3 },
+            opacity: { value: 0.5 },
+            shape: { type: "circle" },
+            color: { value: "#ffffff" },
+          },
+          interactivity: {
+            events: {
+              onHover: { enable: true, mode: "repulse" },
+            },
+            modes: {
+              repulse: { distance: 70, duration: 0.4, factor: 8, speed: 1 },
+            },
+          },
+        }}
         className="absolute inset-0 w-full h-full"
       />
 
@@ -113,14 +60,12 @@ const Hero = () => {
         >
           <TypingEffect />
         </motion.h1>
-
         <motion.p
           className="text-lg md:text-xl text-gray-300 mb-8 max-w-2xl mx-auto"
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 1, delay: 0.3 }}
         ></motion.p>
-
         <motion.div
           className="flex justify-center space-x-4"
           initial={{ opacity: 0 }}
