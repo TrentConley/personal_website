@@ -1,7 +1,8 @@
 import Head from "next/head";
 import Hero from "../components/Hero";
 import Portfolio from "../components/Portfolio";
-import Contact from "../components/Contact"; // New component for contact section
+import Contact from "../components/Contact";
+import About from "../components/About"; // New About component
 
 export default function Home() {
   return (
@@ -14,6 +15,7 @@ export default function Home() {
         />
       </Head>
       <Hero />
+      <About /> {/* Added About section */}
       <Portfolio />
       <Contact />
     </div>

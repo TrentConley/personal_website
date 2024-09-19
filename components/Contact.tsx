@@ -1,80 +1,26 @@
-import { useState } from "react";
+import React from "react";
+import Link from "next/link";
 
 export default function Contact() {
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [status, setStatus] = useState<string | null>(null);
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus("Sending...");
-
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      if (res.ok) {
-        setStatus("Message sent successfully!");
-        setForm({ name: "", email: "", message: "" });
-      } else {
-        setStatus("Failed to send message.");
-      }
-    } catch (error) {
-      setStatus("An error occurred.");
-    }
-  };
-
   return (
     <section id="contact" className="py-16 bg-gray-900 text-white">
-      <h2 className="text-4xl font-bold text-center mb-12">Get in Touch</h2>
-      <div className="max-w-xl mx-auto">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block mb-2 font-medium">Name</label>
-            <input
-              name="name"
-              type="text"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full p-3 rounded bg-gray-800 border border-gray-700"
-              required
-            />
-          </div>
-          <div>
-            <label className="block mb-2 font-medium">Email</label>
-            <input
-              name="email"
-              type="email"
-              value={form.email}
-              onChange={handleChange}
-              className="w-full p-3 rounded bg-gray-800 border border-gray-700"
-              required
-            />
-          </div>
-          <div>
-            <label className="block mb-2 font-medium">Message</label>
-            <textarea
-              name="message"
-              value={form.message}
-              onChange={handleChange}
-              className="w-full p-3 rounded bg-gray-800 border border-gray-700"
-              rows={5}
-              required
-            ></textarea>
-          </div>
-          <button type="submit" className="btn btn-primary w-full">
-            Send Message
-          </button>
-          {status && <p className="text-center mt-4">{status}</p>}
-        </form>
+      <h2 className="text-4xl font-bold text-center mb-12">Contact</h2>
+      <div className="max-w-xl mx-auto text-center space-y-4">
+        <p>
+          <strong>Email:</strong>{" "}
+          <a href="mailto:trentconley@gmail.com" className="text-blue-400">
+            trentconley@gmail.com
+          </a>
+        </p>
+        <p>
+          <strong>Phone:</strong>{" "}
+          <a href="tel:+16507141773" className="text-blue-400">
+            +1 (650) 714-1773
+          </a>
+        </p>
+        <Link href="/resume" className="btn btn-primary mt-6">
+          Download Resume
+        </Link>
       </div>
     </section>
   );
