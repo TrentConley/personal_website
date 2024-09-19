@@ -13,9 +13,10 @@ export default function Home() {
           name="description"
           content="Portfolio of Trent Conley, a software engineer and tech enthusiast."
         />
+        <link rel="icon" href="/TC.png" />
       </Head>
       <Hero />
-      <About /> {/* Added About section */}
+      <About />
       <Portfolio />
       <Contact />
     </div>
