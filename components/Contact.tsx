@@ -8,8 +8,8 @@ export default function Contact() {
       <div className="max-w-xl mx-auto text-center space-y-4">
         <p>
           <strong>Email:</strong>{" "}
-          <a href="mailto:trentconley@gmail.com" className="text-blue-400">
-            trentconley@gmail.com
+          <a href="mailto:tconley7@gatech.edu" className="text-blue-400">
+            tconley7y@gatech.edu
           </a>
         </p>
         <p>
@@ -19,7 +19,7 @@ export default function Contact() {
           </a>
         </p>
         <Link href="/resume" className="btn btn-primary mt-6">
-          Download Resume
+          View & Download Resume
         </Link>
       </div>
     </section>

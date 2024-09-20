@@ -7,7 +7,7 @@ export default function Portfolio() {
       title: "Eye-Controlled Drone",
       image: "/drone.jpg",
       description:
-        "As a passion project, I created a system to control a drone using only eye movements and head tilts. I began by building an algorithm that mapped where my pupil was in relation to the rest of my eye, but this approach was ineffective since I could have variable distance to the screen. I set out to build a Convolutional Neural Network to classify my eye in certain positions, which provided two degrees of freedom. To gain full control of the drone, I incorporated my head tilt into the algorithm, giving me two more degrees of freedom. Finally, I refined the model by adding approximated face to camera distances, adding pupil coordinates, and retrained the CNN to incorporate these factors. The result was a surprisingly accurate and enjoyable drone control system. I had a friend test it out where he would look at another friend in the camera frame from the drone, and the software recognized where  and one of my friends tested it out and you can see my friend Owen control it here: https://www.youtube.com/watch?v=lf6IOTpSvVg",
+        "As a passion project, I created a system to control a drone using only eye movements and head tilts. I began by building an algorithm that mapped where my pupil was in relation to the rest of my eye, but this approach was ineffective since I could have variable distance to the screen. I set out to build a Convolutional Neural Network to classify my eye in certain positions, which provided two degrees of freedom. To gain full control of the drone, I incorporated my head tilt into the algorithm, giving me two more degrees of freedom. Finally, I refined the model by adding approximated face to camera distances, adding pupil coordinates, and retrained the CNN to incorporate these factors. The result was a surprisingly accurate and enjoyable drone control system. I had a friend test it out where he would look at another friend in the camera frame from the drone, and the software recognized where and one of my friends tested it out and you can see my friend Owen control it here: https://www.youtube.com/watch?v=lf6IOTpSvVg",
       links: {
         github: "https://github.com/TrentConley/Drone",
         youtube: "https://www.youtube.com/watch?v=lf6IOTpSvVg",
@@ -30,9 +30,21 @@ export default function Portfolio() {
       title: "Website Development for True Persona AI",
       image: "/persona.png",
       description:
-        "During my contract with True Persona AI, I was responsible for developing a website quickly to support their demos showcasing how generative AI can synthesize the personalities and skills of multiple individuals to form effective consulting teams. The website has been instrumental in over a dozen demonstrations, directly contributing to a successful fundraising round for the startup. You can view the website [here](https://team-builder-v2.vercel.app/).",
+        "During my contract with True Persona AI, I was responsible for developing a website quickly to support their demos showcasing how generative AI can synthesize the personalities and skills of multiple individuals to form effective consulting teams. The website has been instrumental in over a dozen demonstrations, directly contributing to a successful fundraising round for the startup.",
       links: {
         website: "https://team-builder-v2.vercel.app/",
+      },
+    },
+    {
+      id: 4,
+      title: "Easy Deep Learning",
+      image: "/easy-deep-learning.png",
+      description:
+        "During Hacklytics 2024, I developed Easy Deep Learning to simplify fine-tuning vision models without coding. Our platform allows users to upload images and fine-tune image classification models using data augmentation with Stable Diffusion. We leveraged technologies such as Firebase, Next.js, Flask, and Intel Developer Cloud to build a robust solution that can train accurate models with minimal data. We successfully trained models to recognize flooded neighborhoods in Pakistan with high accuracy using only 16 original images augmented with synthetic data. This project demonstrates the potential of making advanced AI techniques accessible to non-technical users.",
+      links: {
+        github: "https://github.com/TrentConley/Hacklytics",
+        website: "https://devfolio.co/projects/easy-deep-learning-5b92",
+        youtube: "https://www.youtube.com/watch?v=Ci80FKm_ACc",
       },
     },
     // Add more projects as needed
