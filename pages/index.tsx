@@ -3,6 +3,7 @@ import Hero from "../components/Hero";
 import Portfolio from "../components/Portfolio";
 import Contact from "../components/Contact";
 import About from "../components/About"; // New About component
+import { Analytics } from "@vercel/analytics/react"; // Added Analytics import
 
 export default function Home() {
   return (
@@ -19,6 +20,7 @@ export default function Home() {
       <About />
       <Portfolio />
       <Contact />
+      <Analytics /> {/* Added Analytics component */}
     </div>
   );
 }
