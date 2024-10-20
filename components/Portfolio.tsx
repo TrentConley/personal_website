@@ -32,7 +32,7 @@ export default function Portfolio() {
       description:
         "During my contract with True Persona AI, I was responsible for developing a website quickly to support their demos showcasing how generative AI can synthesize the personalities and skills of multiple individuals to form effective consulting teams. The website has been instrumental in over a dozen demonstrations, directly contributing to a successful fundraising round for the startup.",
       links: {
-        website: "https://team-builder-v2.vercel.app/",
+        website: "https://team-builder2.vercel.app/",
       },
     },
     {
