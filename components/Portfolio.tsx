@@ -4,6 +4,16 @@ export default function Portfolio() {
   const projects = [
     {
       id: 1,
+      title: "Lexara.io",
+      image: "/lexara.jpg",
+      description:
+        "Built from scratch using React and MongoDB with a Node.js backend, Lexara.io is an AI-powered document intelligence platform that transforms Google Docs workflow. It provides intelligent suggestions, real-time feedback, and AI-powered insights. Features include smart suggestions with context-aware feedback, real-time collaboration for seamless workflow integration, and enterprise-grade security with bank-grade encryption and privacy controls.",
+      links: {
+        website: "https://lexara.io",
+      },
+    },
+    {
+      id: 2,
       title: "Eye-Controlled Drone",
       image: "/drone.jpg",
       description:
@@ -14,7 +24,7 @@ export default function Portfolio() {
       },
     },
     {
-      id: 2,
+      id: 3,
       title: "Token Streaming with Revest FNFTs",
       image: "/revest.png",
       description:
@@ -26,7 +36,7 @@ export default function Portfolio() {
       },
     },
     {
-      id: 3,
+      id: 4,
       title: "Website Development for True Persona AI",
       image: "/persona.png",
       description:
@@ -36,7 +46,7 @@ export default function Portfolio() {
       },
     },
     {
-      id: 4,
+      id: 5,
       title: "Easy Deep Learning",
       image: "/easy-deep-learning.png",
       description:

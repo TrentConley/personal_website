@@ -6,8 +6,8 @@ export default function About() {
       <div className="max-w-4xl mx-auto px-6">
         <h2 className="text-4xl font-bold text-center mb-8">About Me</h2>
         <p className="mb-6">
-          Hi! I am Georgia Tech student graduating in May 2025, planning on
-          doing my Masters in Machine Learning (graduation May 2026). I'm
+          Hi! I am Georgia Tech student graduating in December 2025, planning on
+          doing my Masters in Machine Learning (graduation December 2026). I'm
           interested in software architecture, full stack development, machine
           learning, and drone technology. In my free time, I like to work on
           side projects, practice Brazilian Jiu Jitsu, and do woodworking.
