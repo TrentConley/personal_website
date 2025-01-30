@@ -6,6 +6,7 @@ import { loadSlim } from "tsparticles-slim";
 import { motion } from "framer-motion";
 import TypingEffect from "./TypingEffect";
 import Link from "next/link";
+import { FiGithub } from "react-icons/fi";
 
 const Hero = () => {
   const particlesInit = async (engine: Engine) => {
@@ -46,6 +47,14 @@ const Hero = () => {
                     {item.name}
                   </Link>
                 ))}
+                <a
+                  href="https://github.com/TrentConley"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-300 hover:text-white hover:bg-white/10 p-2 rounded-md transition-all duration-300"
+                >
+                  <FiGithub className="w-5 h-5" />
+                </a>
               </div>
             </div>
           </div>
