@@ -29,16 +29,18 @@ export default function TypingEffect() {
       >
         I am a{" "}
         <span className="text-blue-500">
-          <Typewriter
-            options={{
-              strings: ["Software Engineer", "Inventor", "Tech Enthusiast"],
-              autoStart: true,
-              loop: true,
-              delay: 75,
-              deleteSpeed: 50,
-              cursor: "_",
-            }}
-          />
+          <span className="inline-block">
+            <Typewriter
+              options={{
+                strings: ["Software Engineer", "Inventor", "Tech Enthusiast"],
+                autoStart: true,
+                loop: true,
+                delay: 75,
+                deleteSpeed: 50,
+                cursor: "_",
+              }}
+            />
+          </span>
         </span>
       </motion.p>
     </div>
