@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import Particles from "react-tsparticles";
 import { Engine } from "tsparticles-engine";
 import { loadSlim } from "tsparticles-slim";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import TypingEffect from "./TypingEffect";
 import Link from "next/link";
-import { FiGithub } from "react-icons/fi";
+import { FiGithub, FiMenu, FiX } from "react-icons/fi";
 
 const Hero = () => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   const particlesInit = async (engine: Engine) => {
     await loadSlim(engine);
   };
@@ -21,6 +23,14 @@ const Hero = () => {
     { name: "Resume", href: "/resume" },
     { name: "Contact", href: "#contact" },
   ];
+
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen);
+  };
+
+  const closeMenu = () => {
+    setIsMenuOpen(false);
+  };
 
   return (
     <section className="relative min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
@@ -36,6 +46,7 @@ const Hero = () => {
             <div className="flex-shrink-0">
               <span className="text-white font-bold text-xl">TC</span>
             </div>
+            {/* Desktop Navigation */}
             <div className="hidden md:block">
               <div className="ml-10 flex items-center space-x-8">
                 {navItems.map((item) => (
@@ -57,8 +68,57 @@ const Hero = () => {
                 </a>
               </div>
             </div>
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <button
+                onClick={toggleMenu}
+                className="text-gray-300 hover:text-white p-2 rounded-md transition-all duration-300"
+              >
+                {isMenuOpen ? (
+                  <FiX className="w-6 h-6" />
+                ) : (
+                  <FiMenu className="w-6 h-6" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Mobile Navigation */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="md:hidden border-t border-white/10"
+            >
+              <div className="px-2 pt-2 pb-3 space-y-1 backdrop-blur-md bg-black/30">
+                {navItems.map((item) => (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    onClick={closeMenu}
+                    className="text-gray-300 hover:text-white hover:bg-white/10 block px-3 py-2 rounded-md text-base font-medium transition-all duration-300"
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+                <a
+                  href="https://github.com/TrentConley"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={closeMenu}
+                  className="text-gray-300 hover:text-white hover:bg-white/10 flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-all duration-300"
+                >
+                  <FiGithub className="w-5 h-5" />
+                  <span>GitHub</span>
+                </a>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.nav>
 
       {/* Particles Background */}
