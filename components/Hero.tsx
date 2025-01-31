@@ -44,7 +44,7 @@ const Hero = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex-shrink-0">
-              <span className="text-white font-bold text-xl">TC</span>
+              <span className="text-white font-bold text-xl">Trent Conley</span>
             </div>
             {/* Desktop Navigation */}
             <div className="hidden md:block">
