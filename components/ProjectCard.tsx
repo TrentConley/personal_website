@@ -8,6 +8,7 @@ import {
   FiChevronUp,
 } from "react-icons/fi";
 import Link from "next/link";
+import { motion } from "framer-motion";
 
 interface Project {
   id: number;
@@ -27,6 +28,7 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project }: ProjectCardProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const toggleDescription = () => {
     setIsOpen(!isOpen);
@@ -38,23 +40,43 @@ export default function ProjectCard({ project }: ProjectCardProps) {
       : project.description;
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-      <Image
-        src={project.image}
-        alt={project.title}
-        width={600}
-        height={400}
-        className="object-cover"
-      />
+    <motion.div
+      className="bg-black/40 backdrop-blur-lg rounded-2xl overflow-hidden shadow-xl border border-white/10 hover:border-white/20 transition-all duration-300"
+      whileHover={{ y: -5, scale: 1.02 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+    >
+      <div className="relative">
+        <Image
+          src={project.image}
+          alt={project.title}
+          width={600}
+          height={400}
+          className="object-cover w-full h-64 transition-transform duration-300"
+          style={{
+            transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent"></div>
+      </div>
+      
       <div className="p-6">
-        <h3 className="text-2xl font-semibold mb-2">{project.title}</h3>
-        <p className="text-gray-600">
+        <motion.h3 
+          className="text-2xl font-bold mb-2 text-white bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent"
+          whileHover={{ x: 5 }}
+        >
+          {project.title}
+        </motion.h3>
+        <p className="text-white mb-4">
           {isOpen ? project.description : truncatedDescription}
         </p>
         {project.description.length > 100 && (
-          <button
+          <motion.button
             onClick={toggleDescription}
-            className="flex items-center mt-2 text-blue-500 hover:text-blue-700 focus:outline-none"
+            className="flex items-center text-cyan-400 hover:text-cyan-300 transition-colors duration-300 mb-4 font-medium"
+            whileHover={{ x: 5 }}
           >
             {isOpen ? "Show Less" : "Show More"}
             {isOpen ? (
@@ -62,26 +84,44 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             ) : (
               <FiChevronDown className="ml-1" />
             )}
-          </button>
+          </motion.button>
         )}
-        <div className="flex items-center space-x-4 mt-4">
+        <div className="flex items-center space-x-4">
           {project.links.github && (
-            <Link href={project.links.github} passHref>
-              <FiGithub className="w-6 h-6 text-gray-700 hover:text-gray-900 cursor-pointer" />
-            </Link>
+            <motion.a
+              href={project.links.github}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gray-300 hover:text-white transition-colors duration-300"
+              whileHover={{ scale: 1.2, rotate: 5 }}
+            >
+              <FiGithub className="w-6 h-6" />
+            </motion.a>
           )}
           {project.links.website && (
-            <Link href={project.links.website} passHref>
-              <FiExternalLink className="w-6 h-6 text-gray-700 hover:text-gray-900 cursor-pointer" />
-            </Link>
+            <motion.a
+              href={project.links.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gray-300 hover:text-white transition-colors duration-300"
+              whileHover={{ scale: 1.2, rotate: 5 }}
+            >
+              <FiExternalLink className="w-6 h-6" />
+            </motion.a>
           )}
           {project.links.youtube && (
-            <Link href={project.links.youtube} passHref>
-              <FiYoutube className="w-6 h-6 text-red-600 hover:text-red-800 cursor-pointer" />
-            </Link>
+            <motion.a
+              href={project.links.youtube}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-500 hover:text-red-400 transition-colors duration-300"
+              whileHover={{ scale: 1.2, rotate: 5 }}
+            >
+              <FiYoutube className="w-6 h-6" />
+            </motion.a>
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

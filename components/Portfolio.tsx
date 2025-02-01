@@ -1,4 +1,30 @@
+import React from "react";
+import { motion } from "framer-motion";
 import ProjectCard from "./ProjectCard";
+import PaintStrokes from "./PaintStrokes";
+
+const InteractiveBackground = () => {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {/* Animated color splashes */}
+      <div className="absolute top-1/3 -right-20 w-96 h-96 bg-blue-500/10 rounded-full mix-blend-overlay filter blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-1/3 left-1/4 w-80 h-80 bg-purple-500/10 rounded-full mix-blend-overlay filter blur-3xl animate-pulse delay-700"></div>
+      <div className="absolute top-2/3 right-1/4 w-72 h-72 bg-cyan-500/10 rounded-full mix-blend-overlay filter blur-3xl animate-pulse delay-1500"></div>
+      <motion.div
+        className="absolute top-1/4 right-1/3 w-64 h-64 bg-pink-500/10 rounded-full mix-blend-overlay filter blur-3xl"
+        animate={{
+          scale: [1, 1.3, 1],
+          opacity: [0.2, 0.4, 0.2],
+        }}
+        transition={{
+          duration: 5,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+      ></motion.div>
+    </div>
+  );
+};
 
 export default function Portfolio() {
   const projects = [
@@ -61,13 +87,24 @@ export default function Portfolio() {
   ];
 
   return (
-    <section id="portfolio" className="py-16 bg-gray-50">
-      <h2 className="text-4xl font-bold text-center mb-12">Projects</h2>
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 px-6">
-        {projects.map((project) => (
-          <ProjectCard key={project.id} project={project} />
-        ))}
-      </div>
+    <section id="portfolio" className="relative py-20 bg-[#050A18] overflow-hidden">
+      <PaintStrokes />
+      
+      <motion.div
+        className="relative max-w-6xl mx-auto px-6 z-10"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8 }}
+      >
+        <h2 className="text-5xl font-bold text-center mb-12 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 text-transparent bg-clip-text drop-shadow-lg">
+          Projects
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {projects.map((project) => (
+            <ProjectCard key={project.id} project={project} />
+          ))}
+        </div>
+      </motion.div>
     </section>
   );
 }

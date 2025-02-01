@@ -12,37 +12,59 @@ export default function TypingEffect() {
   if (!isMounted) return null;
 
   return (
-    <div className="text-center">
-      <motion.p
+    <div className="text-center relative">
+      <motion.div
         initial={{ opacity: 0, y: -50 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1 }}
-        className="text-7xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 drop-shadow-lg"
+        transition={{ duration: 1.5, ease: "easeOut" }}
+        className="relative"
       >
-        Trent Conley
-      </motion.p>
-      <motion.p
+        <motion.p
+          className="text-7xl font-bold mb-4 text-white/90"
+          style={{
+            textShadow: '0 0 30px rgba(59, 130, 246, 0.3), 0 0 60px rgba(147, 51, 234, 0.2)',
+          }}
+        >
+          Trent Conley
+        </motion.p>
+      </motion.div>
+      <motion.div
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.5 }}
-        className="text-2xl text-gray-300"
+        transition={{ duration: 1.5, delay: 0.5, ease: "easeOut" }}
+        className="relative"
       >
-        I am a{" "}
-        <span className="text-blue-500">
-          <span className="inline-block">
-            <Typewriter
-              options={{
-                strings: ["Software Engineer", "Inventor", "Tech Enthusiast"],
-                autoStart: true,
-                loop: true,
-                delay: 75,
-                deleteSpeed: 50,
-                cursor: "_",
+        <p className="text-2xl text-gray-300/90">
+          I am a{" "}
+          <span className="relative inline-block">
+            <span className="relative z-10">
+              <Typewriter
+                options={{
+                  strings: ["Software Engineer", "Inventor", "Tech Enthusiast"],
+                  autoStart: true,
+                  loop: true,
+                  delay: 75,
+                  deleteSpeed: 50,
+                  cursor: "_",
+                  wrapperClassName: "text-white/90",
+                }}
+              />
+            </span>
+            <motion.span
+              className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 blur-lg"
+              animate={{
+                opacity: [0.3, 0.5, 0.3],
+                scale: [1, 1.03, 1],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut",
               }}
             />
           </span>
-        </span>
-      </motion.p>
+        </p>
+      </motion.div>
     </div>
   );
 }
