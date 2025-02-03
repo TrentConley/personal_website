@@ -29,6 +29,7 @@ interface ProjectCardProps {
 export default function ProjectCard({ project }: ProjectCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const toggleDescription = () => {
     setIsOpen(!isOpen);
@@ -49,16 +50,23 @@ export default function ProjectCard({ project }: ProjectCardProps) {
       onHoverEnd={() => setIsHovered(false)}
     >
       <div className="relative">
-        <Image
-          src={project.image}
-          alt={project.title}
-          width={600}
-          height={400}
-          className="object-cover w-full h-64 transition-transform duration-300"
-          style={{
-            transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-          }}
-        />
+        <div className="w-full h-64 bg-gradient-to-br from-gray-900 to-gray-800 animate-pulse">
+          <Image
+            src={project.image}
+            alt={project.title}
+            width={600}
+            height={400}
+            priority
+            loading="eager"
+            className={`object-cover w-full h-64 transition-all duration-500 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+            style={{
+              transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+            }}
+            onLoad={() => setImageLoaded(true)}
+          />
+        </div>
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent"></div>
       </div>
       

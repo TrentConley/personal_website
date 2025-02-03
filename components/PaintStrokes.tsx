@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, CSSProperties } from "react";
 import { motion, useAnimation } from "framer-motion";
 
 interface FluidBlobProps {
@@ -24,6 +24,20 @@ const generateRandomPath = () => {
   return path;
 };
 
+const getColorValue = (color: string) => {
+  const colors: { [key: string]: string } = {
+    blue: 'rgb(37, 99, 235)',
+    indigo: 'rgb(79, 70, 229)',
+    purple: 'rgb(147, 51, 234)',
+    fuchsia: 'rgb(217, 70, 239)',
+    cyan: 'rgb(6, 182, 212)',
+    violet: 'rgb(139, 92, 246)',
+    pink: 'rgb(236, 72, 153)',
+    rose: 'rgb(244, 63, 94)',
+  };
+  return colors[color] || colors.blue;
+};
+
 const FluidBlob: React.FC<FluidBlobProps> = ({ 
   size, 
   color1, 
@@ -37,6 +51,14 @@ const FluidBlob: React.FC<FluidBlobProps> = ({
   const controls = useAnimation();
   const isMounted = useRef(false);
   
+  const getBlurValue = (blur: string) => {
+    const blurValues: { [key: string]: string } = {
+      '2xl': '40px',
+      '3xl': '64px',
+    };
+    return blurValues[blur] || '40px';
+  };
+
   useEffect(() => {
     isMounted.current = true;
     let animationFrame: number;
@@ -63,7 +85,6 @@ const FluidBlob: React.FC<FluidBlobProps> = ({
       }
     };
 
-    // Start the animation after a delay
     const timeoutId = setTimeout(() => {
       animate();
     }, delay * 1000);
@@ -76,6 +97,29 @@ const FluidBlob: React.FC<FluidBlobProps> = ({
       }
     };
   }, [controls, delay]);
+
+  const blobStyles: { first: CSSProperties; second: CSSProperties } = {
+    first: {
+      position: 'absolute' as const,
+      inset: 0,
+      backgroundColor: getColorValue(color1),
+      opacity: Number(opacity1) / 100,
+      borderRadius: '9999px',
+      filter: `blur(${getBlurValue(blurAmount)})`,
+      transform: 'translateZ(0)',
+      mixBlendMode: 'screen' as const,
+    },
+    second: {
+      position: 'absolute' as const,
+      inset: 0,
+      backgroundColor: getColorValue(color2),
+      opacity: Number(opacity2) / 100,
+      borderRadius: '9999px',
+      filter: 'blur(100px)',
+      transform: 'translateZ(0)',
+      mixBlendMode: 'screen' as const,
+    }
+  };
 
   return (
     <motion.div
@@ -100,8 +144,8 @@ const FluidBlob: React.FC<FluidBlobProps> = ({
         }}
         className="relative w-full h-full"
       >
-        <div className={`absolute inset-0 bg-${color1}-600/${opacity1} rounded-full blur-${blurAmount} transform-gpu mix-blend-screen`}></div>
-        <div className={`absolute inset-0 bg-${color2}-500/${opacity2} rounded-full blur-[100px] transform-gpu mix-blend-screen`}></div>
+        <div style={blobStyles.first}></div>
+        <div style={blobStyles.second}></div>
       </motion.div>
     </motion.div>
   );
