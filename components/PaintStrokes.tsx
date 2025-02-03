@@ -153,18 +153,18 @@ const FluidBlob: React.FC<FluidBlobProps> = ({
 
 export default function PaintStrokes() {
   const blobs = [
-    { size: "w-[45vw] h-[45vw]", color1: "blue", color2: "indigo", delay: 0, blurAmount: "3xl", opacity1: "25", opacity2: "20" },
-    { size: "w-[40vw] h-[40vw]", color1: "purple", color2: "fuchsia", delay: 2, blurAmount: "3xl", opacity1: "20", opacity2: "15" },
-    { size: "w-[50vw] h-[50vw]", color1: "cyan", color2: "blue", delay: 1, blurAmount: "3xl", opacity1: "20", opacity2: "15" },
-    { size: "w-[35vw] h-[35vw]", color1: "violet", color2: "purple", delay: 3, blurAmount: "2xl", opacity1: "25", opacity2: "20" },
-    { size: "w-[45vw] h-[45vw]", color1: "pink", color2: "rose", delay: 2, blurAmount: "3xl", opacity1: "20", opacity2: "15" },
-    { size: "w-[30vw] h-[30vw]", color1: "blue", color2: "cyan", delay: 4, blurAmount: "2xl", opacity1: "20", opacity2: "15" },
-    { size: "w-[40vw] h-[40vw]", color1: "indigo", color2: "violet", delay: 1, blurAmount: "3xl", opacity1: "20", opacity2: "15" },
-    { size: "w-[35vw] h-[35vw]", color1: "purple", color2: "pink", delay: 3, blurAmount: "2xl", opacity1: "20", opacity2: "15" },
+    { size: "w-[45vw] h-[45vw]", color1: "blue", color2: "indigo", delay: 0, blurAmount: "3xl", opacity1: "15", opacity2: "10" },
+    { size: "w-[40vw] h-[40vw]", color1: "purple", color2: "fuchsia", delay: 2, blurAmount: "3xl", opacity1: "12", opacity2: "8" },
+    { size: "w-[50vw] h-[50vw]", color1: "cyan", color2: "blue", delay: 1, blurAmount: "3xl", opacity1: "12", opacity2: "8" },
+    { size: "w-[35vw] h-[35vw]", color1: "violet", color2: "purple", delay: 3, blurAmount: "2xl", opacity1: "15", opacity2: "10" },
+    { size: "w-[45vw] h-[45vw]", color1: "pink", color2: "rose", delay: 2, blurAmount: "3xl", opacity1: "12", opacity2: "8" },
+    { size: "w-[30vw] h-[30vw]", color1: "blue", color2: "cyan", delay: 4, blurAmount: "2xl", opacity1: "12", opacity2: "8" },
+    { size: "w-[40vw] h-[40vw]", color1: "indigo", color2: "violet", delay: 1, blurAmount: "3xl", opacity1: "12", opacity2: "8" },
+    { size: "w-[35vw] h-[35vw]", color1: "purple", color2: "pink", delay: 3, blurAmount: "2xl", opacity1: "12", opacity2: "8" },
   ];
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden bg-[#050A18]">
+    <div className="fixed inset-0 pointer-events-none overflow-hidden bg-[#030610]">
       {blobs.map((blob, index) => (
         <FluidBlob key={index} {...blob} index={index} />
       ))}
