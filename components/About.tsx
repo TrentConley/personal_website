@@ -64,7 +64,7 @@ export default function About() {
             >
               <span className="text-pink-400 mt-1.5 text-xl">•</span>
               <span className="text-lg text-white">
-                Contracting work in Computer Vision, AI, and Machine Learning.
+                Contracting work in Computer Vision, AI, or Full Stack Development.
               </span>
             </motion.li>
           </ul>
