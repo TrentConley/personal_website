@@ -43,7 +43,17 @@ const Hero = () => {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 flex items-center space-x-2">
+              <Image
+                src="/profile.png"
+                alt="Profile"
+                width={40}
+                height={40}
+                priority
+                loading="eager"
+                sizes="40px"
+                className="rounded-full"
+              />
               <span className="text-white font-bold text-xl">Trent Conley</span>
             </div>
             {/* Desktop Navigation */}
@@ -164,6 +174,9 @@ const Hero = () => {
               width={180}
               height={180}
               className="rounded-full shadow-lg relative"
+              priority
+              loading="eager"
+              sizes="180px"
             />
           </div>
         </motion.div>
