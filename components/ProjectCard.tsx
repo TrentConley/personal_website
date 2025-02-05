@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import {
   FiGithub,
@@ -40,6 +40,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
       ? `${project.description.substring(0, 100)}...`
       : project.description;
 
+  useEffect(() => {
+    const img = document.createElement('img');
+    img.src = project.image;
+  }, [project.image]);
+
   return (
     <motion.div
       className="bg-black/40 backdrop-blur-lg rounded-2xl overflow-hidden shadow-xl border border-white/10 hover:border-white/20 transition-all duration-300"
@@ -58,7 +63,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             height={400}
             priority={false}
             loading="lazy"
-            lazyBoundary="2000px"
+            lazyBoundary="5000px"
             placeholder="blur"
             blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
             className={`object-cover w-full h-64 transition-all duration-500 ${
@@ -69,7 +74,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             }}
             onLoad={() => setImageLoaded(true)}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            quality={50}
+            quality={40}
           />
         </div>
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent"></div>
