@@ -58,7 +58,9 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             height={400}
             priority={false}
             loading="lazy"
-            lazyBoundary="800px"
+            lazyBoundary="2000px"
+            placeholder="blur"
+            blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
             className={`object-cover w-full h-64 transition-all duration-500 ${
               imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
@@ -67,7 +69,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             }}
             onLoad={() => setImageLoaded(true)}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            quality={75}
+            quality={50}
           />
         </div>
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent"></div>
