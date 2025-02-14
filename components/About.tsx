@@ -20,10 +20,7 @@ export default function About() {
         
         <div className="bg-black/40 backdrop-blur-lg rounded-2xl p-8 mb-12 shadow-xl border border-white/10 hover:border-white/20 transition-all duration-300">
           <p className="text-lg leading-relaxed mb-6 text-white">
-            Hi! I am a Georgia Tech student graduating in December 2025, planning on
-            doing my Masters in Machine Learning (graduation December 2026). I'm
-            interested in software architecture, full stack development, machine
-            learning, and drone technology.
+            Hi! I'm a Georgia Tech student set to graduate in December 2025. This summer, I'll be joining SpaceX as a Software Engineering intern, and I'm planning on pursuing a Masters in Machine Learning (graduating December 2026). I love in software architecture, full stack development, machine learning, and drone technology.
           </p>
           <p className="text-lg leading-relaxed text-white">
             In my free time, I like to work on side projects, practice Brazilian
@@ -33,7 +30,7 @@ export default function About() {
 
         <div className="bg-black/40 backdrop-blur-lg rounded-2xl p-8 shadow-xl border border-white/10 hover:border-white/20 transition-all duration-300">
           <h3 className="text-3xl font-bold mb-6 bg-gradient-to-r from-cyan-400 to-blue-500 text-transparent bg-clip-text drop-shadow-lg">
-            Opportunities I'm Looking For
+            What I'm Looking For
           </h3>
           <ul className="space-y-4">
             <motion.li 
@@ -43,8 +40,7 @@ export default function About() {
             >
               <span className="text-cyan-400 mt-1.5 text-xl">•</span>
               <span className="text-lg text-white">
-                Internships where I can collaborate with and learn from a highly
-                skilled team on challenging software or hardware projects.
+                Full-time opportunities starting 2026 where I can contribute to challenging software projects at the intersection of AI and engineering.
               </span>
             </motion.li>
             <motion.li 
@@ -64,7 +60,7 @@ export default function About() {
             >
               <span className="text-pink-400 mt-1.5 text-xl">•</span>
               <span className="text-lg text-white">
-                Contracting work in Computer Vision, AI, or Full Stack Development.
+                Part-time contracting work in Computer Vision, AI, or Full Stack Development.
               </span>
             </motion.li>
           </ul>
