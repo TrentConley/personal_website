@@ -20,11 +20,11 @@ export default function About() {
         
         <div className="bg-black/40 backdrop-blur-lg rounded-2xl p-8 mb-12 shadow-xl border border-white/10 hover:border-white/20 transition-all duration-300">
           <p className="text-lg leading-relaxed mb-6 text-white">
-            Hi! I'm a Georgia Tech student set to graduate in December 2025. This summer, I'll be joining SpaceX as a Software Engineering intern, and I'm planning on pursuing a Masters in Machine Learning (graduating December 2026). I love software architecture, full stack development, machine learning, and drone technology.
+            Hi! I'm a Georgia Tech student set to graduate in December 2025. This summer, I'll be joining SpaceX as a Software Engineering intern. I love software architecture, full stack development, machine learning, and drone technology.
           </p>
           <p className="text-lg leading-relaxed text-white">
             In my free time, I like to work on side projects, practice Brazilian
-            Jiu Jitsu, and do woodworking.
+            Jiu-Jitsu, and do woodworking.
           </p>
         </div>
 
