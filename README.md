@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trent Conley — Terminal UI
+
+A command-line inspired personal site for Trent Conley, built with React and Vite. The interface mimics a modern terminal session: each section appears as a command prompt with animated typing, sleek transitions, and high-contrast styling tuned for speed.
+
+## Stack
+
+- React 18 + TypeScript
+- Vite build tooling
+- Framer Motion for motion primitives
+- Custom CSS (no Tailwind/utility frameworks)
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The development server runs at [http://localhost:5173](http://localhost:5173).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm run preview
+```
 
-## Learn More
+`npm run build` produces the optimised bundle in `dist/`, and `npm run preview` serves it locally to verify the production output.
 
-To learn more about Next.js, take a look at the following resources:
+## Keyboard Shortcuts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `Enter` — advance to the next command/output block.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+src/
+  App.tsx              // Command flow orchestration
+  main.tsx             // React entry point
+  style.css            // Global CLI styling
+  components/          // UI primitives (status bar, command block, outputs)
+  data/profile.ts      // Profile, project, and book metadata
+public/                // Static assets (images, resume PDF, favicon)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is framework-agnostic; you can deploy the generated `dist/` folder to any static host (Vercel, Netlify, Cloudflare Pages, GitHub Pages, etc.).
