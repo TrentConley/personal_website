@@ -21,7 +21,7 @@ export const profile = {
   handle: "trent@console",
   title: "AI Engineer @ SpaceX",
   tagline:
-    "Georgia Tech CS student graduating December 2025 • AI Engineer at SpaceX • Building intelligent systems that stay in the loop.",
+    "AI Engineer at SpaceX, putting Grok on Mars • Georgia Tech CS • Building intelligent systems that stay in the loop.",
   location: "Los Angeles, CA",
   focusAreas: [
     "Full-stack product architecture",
