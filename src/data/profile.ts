@@ -19,21 +19,17 @@ export type Book = {
 export const profile = {
   name: "Trent Conley",
   handle: "trent@console",
-  title: "Software Engineer & AI Builder",
+  title: "AI Engineer @ SpaceX",
   tagline:
-    "Georgia Tech CS student graduating December 2025 • Incoming SpaceX SWE intern • Building intelligent systems that stay in the loop.",
-  location: "Atlanta, GA",
+    "Georgia Tech CS student graduating December 2025 • AI Engineer at SpaceX • Building intelligent systems that stay in the loop.",
+  location: "Los Angeles, CA",
   focusAreas: [
     "Full-stack product architecture",
     "Applied machine learning & computer vision",
     "Autonomous drones and control systems",
     "High-velocity startup execution",
   ],
-  availability: [
-    "Full-time software engineering roles starting in 2026 with deep AI or systems challenges.",
-    "Looking for the right co-founder to build a high-impact company.",
-    "Part-time contracting in computer vision, AI infrastructure, or full-stack delivery.",
-  ],
+  availability: [],
   contact: {
     email: "tconley7@gatech.edu",
     phone: "+1 (650) 714-1773",
