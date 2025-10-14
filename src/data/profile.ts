@@ -104,6 +104,8 @@ export const projects: Project[] = [
 
 export const books: Book[] = [
   { title: "The Martian", author: "Andy Weir" },
+  { title: "Project Hail Mary", author: "Andy Weir" },
+  { title: "Children of Time", author: "Adrian Tchaikovsky" },
   { title: "The Three-Body Problem", author: "Liu Cixin" },
   { title: "Ender's Game", author: "Orson Scott Card" },
   { title: "The Alchemist", author: "Paulo Coelho" },
