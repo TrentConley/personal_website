@@ -5,8 +5,9 @@ import { Banner } from "./components/outputs/Banner";
 import { WhoAmI } from "./components/outputs/WhoAmI";
 import { ProjectsPanel } from "./components/outputs/ProjectsPanel";
 import { BooksPanel } from "./components/outputs/BooksPanel";
-import { ResumePanel } from "./components/outputs/ResumePanel";
+import { WritingPanel } from "./components/outputs/WritingPanel";
 import { ContactPanel } from "./components/outputs/ContactPanel";
+import { ArticlePage } from "./components/ArticlePage";
 import { books, profile, projects } from "./data/profile";
 
 type Command = {
@@ -46,6 +47,11 @@ const commandSequence: Command[] = [
     ),
   },
   {
+    id: "writing",
+    command: "cat writing/parallel-betting.md",
+    render: () => <WritingPanel />,
+  },
+  {
     id: "projects",
     command: "ls projects --featured",
     render: () => <ProjectsPanel projects={projects} />,
@@ -54,11 +60,6 @@ const commandSequence: Command[] = [
     id: "books",
     command: "cat library/recommended.txt",
     render: () => <BooksPanel books={books} />,
-  },
-  {
-    id: "resume",
-    command: "open resume.pdf --preview",
-    render: () => <ResumePanel resumeUrl={profile.contact.resume} />,
   },
   {
     id: "contact",
@@ -74,6 +75,10 @@ const commandSequence: Command[] = [
 ];
 
 export default function App() {
+  if (window.location.pathname === "/blog/parallel-betting") {
+    return <ArticlePage />;
+  }
+
   const totalCommands = commandSequence.length;
   const [visibleCount, setVisibleCount] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);

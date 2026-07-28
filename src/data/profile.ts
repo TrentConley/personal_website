@@ -34,7 +34,6 @@ export const profile = {
     email: "tconley7@gatech.edu",
     phone: "+1 (650) 714-1773",
     github: "https://github.com/TrentConley",
-    resume: "/Trent Conley Resume.pdf",
   },
 };
 

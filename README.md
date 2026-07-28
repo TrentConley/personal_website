@@ -31,6 +31,9 @@ npm run preview
 
 - `Enter` — advance to the next command/output block.
 
+The featured essay is also available directly at
+`/blog/parallel-betting`.
+
 ## Project Structure
 
 ```
@@ -38,9 +41,9 @@ src/
   App.tsx              // Command flow orchestration
   main.tsx             // React entry point
   style.css            // Global CLI styling
-  components/          // UI primitives (status bar, command block, outputs)
+  components/          // UI primitives, terminal outputs, and article view
   data/profile.ts      // Profile, project, and book metadata
-public/                // Static assets (images, resume PDF, favicon)
+public/                // Static assets (images, article PDF, favicon)
 ```
 
 ## Deployment
