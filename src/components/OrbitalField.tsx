@@ -255,7 +255,11 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const minimumRenderRatio = rect.width < 640 ? 2 : 1;
+      const dpr = Math.min(
+        Math.max(window.devicePixelRatio || 1, minimumRenderRatio),
+        3,
+      );
       width = rect.width;
       height = rect.height;
       pixelRatio = dpr;
@@ -504,7 +508,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
     skyImage.decoding = "async";
     skyImage.addEventListener("load", handleSkyLoad);
     skyImage.addEventListener("error", handleSkyError);
-    skyImage.src = "/gaia-edr3-sky.webp";
+    skyImage.src = "/gaia-edr3-sky.jpg";
     if (skyImage.complete && skyImage.naturalWidth) handleSkyLoad();
     const hipparcosCatalog = fetch("/hipparcos-bright-stars.tsv", {
       signal: catalogRequest.signal,

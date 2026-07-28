@@ -309,11 +309,17 @@ function drawCatalogStars(
   renderScale: number,
   camera: CameraBasis,
   stars: CelestialStar[],
+  compact: boolean,
 ) {
   context.save();
   context.globalCompositeOperation = "screen";
 
   for (const star of stars) {
+    // On a phone, desktop catalog density collapses thousands of separate
+    // points into noise. Preserve only the stars that would actually read as
+    // distinct naked-eye objects at this scale.
+    if (compact && star.magnitude > 5) continue;
+
     const direction = equatorialVector(star.rightAscension, star.declination);
     const forward = dot(direction, camera.center);
     if (forward <= 0) continue;
@@ -571,6 +577,7 @@ export function renderMilkyWay(
     outputScale,
     camera,
     stars,
+    options.compact,
   );
 
   return { diffuse: diffuseOutput, stars: starOutput };
