@@ -4,7 +4,9 @@ A single-screen personal site built with React and Vite. Projects, writing, and 
 
 The field models Io, Europa, and Ganymede from [JPL mean orbital elements](https://ssd.jpl.nasa.gov/sats/elem/). Their timing and eccentric motion are preserved while orbital radii are logarithmically compressed to fit the interface.
 
-The Milky Way is rendered in code in the camera orientation implied by the Jovian Laplace plane. Bright-star positions, magnitudes, and color indices come from the [ESA Hipparcos catalogue](https://cdsarc.cds.unistra.fr/viz-bin/ReadMe/I/239?format=html&tex=true); the unresolved stellar glow and dust lanes use a deterministic galactic-coordinate density model.
+The Milky Way is rendered in code in the camera orientation implied by the Jovian Laplace plane. Its measured structure comes from the [Gaia EDR3 all-sky brightness map](https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_32), which combines observations of more than 1.8 billion stars. Point stars use the [ESA Hipparcos catalogue](https://cdsarc.cds.unistra.fr/viz-bin/ReadMe/I/239?format=html&tex=true) through magnitude 6.5 and Gaia DR3 sources from magnitude 6.5 to 8.5.
+
+Gaia sky data: ESA/Gaia/DPAC, acknowledgement A. Moitinho, licensed under CC BY-SA 3.0 IGO. Hipparcos catalogue: ESA 1997 via CDS/VizieR.
 
 ## Stack
 

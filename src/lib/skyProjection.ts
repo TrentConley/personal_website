@@ -7,13 +7,24 @@ export type CelestialStar = {
   colorIndex: number | null;
 };
 
+export type RenderedSky = {
+  diffuse: HTMLCanvasElement;
+  stars: HTMLCanvasElement;
+};
+
 type SkyProjectionOptions = {
   width: number;
   height: number;
+  pixelRatio: number;
   orbitProjection: number;
   orbitRotation: number;
   compact: boolean;
 };
+
+export type CelestialProjectionOptions = Pick<
+  SkyProjectionOptions,
+  "width" | "height" | "orbitProjection" | "orbitRotation" | "compact"
+>;
 
 type CameraBasis = {
   center: Vector3;
@@ -23,6 +34,12 @@ type CameraBasis = {
   tangentY: number;
 };
 
+type SourcePixels = {
+  width: number;
+  height: number;
+  pixels: Uint8ClampedArray;
+};
+
 // ICRS/J2000 equatorial to galactic rotation (IAU standard orientation).
 const equatorialToGalactic = [
   [-0.0548755604, -0.8734370902, -0.4838350155],
@@ -30,13 +47,18 @@ const equatorialToGalactic = [
   [-0.867666149, -0.1980763734, 0.4559837762],
 ];
 
+const sourcePixelCache = new WeakMap<HTMLImageElement, SourcePixels>();
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
+const positiveModulo = (value: number, divisor: number) =>
+  ((value % divisor) + divisor) % divisor;
 
-function smoothstep(edge0: number, edge1: number, value: number) {
-  const mix = clamp((value - edge0) / (edge1 - edge0), 0, 1);
-  return mix * mix * (3 - 2 * mix);
+function opticalVignette(normalizedX: number, normalizedY: number) {
+  const edgeDistance = Math.hypot(normalizedX * 0.72, normalizedY * 0.7);
+  const baseFalloff = clamp(1.08 - edgeDistance * 0.5, 0.48, 1);
+  const cornerProgress = clamp((edgeDistance - 0.48) / 0.52, 0, 1);
+  return baseFalloff * (1 - cornerProgress ** 2 * 0.22);
 }
 
 function normalize(vector: Vector3): Vector3 {
@@ -126,9 +148,9 @@ function buildCamera(
       Math.cos(cameraTilt),
     ),
   );
-  const horizontalFieldOfView = radians(options.compact ? 92 : 112);
+  const horizontalFieldOfView = radians(options.compact ? 112 : 112);
   const tangentX = Math.tan(horizontalFieldOfView / 2);
-  const displayRoll = radians(options.compact ? 15 : -145);
+  const displayRoll = radians(options.compact ? -38 : -145);
   const right = normalize(
     combine(
       unrolledRight,
@@ -155,36 +177,30 @@ function buildCamera(
   };
 }
 
-function integerHash(x: number, y: number) {
-  let value = Math.imul(x, 374761393) + Math.imul(y, 668265263);
-  value = Math.imul(value ^ (value >>> 13), 1274126177);
-  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
-}
-
-function valueNoise(x: number, y: number) {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const xMix = (x - x0) ** 2 * (3 - 2 * (x - x0));
-  const yMix = (y - y0) ** 2 * (3 - 2 * (y - y0));
-  const top =
-    integerHash(x0, y0) * (1 - xMix) +
-    integerHash(x0 + 1, y0) * xMix;
-  const bottom =
-    integerHash(x0, y0 + 1) * (1 - xMix) +
-    integerHash(x0 + 1, y0 + 1) * xMix;
-  return top * (1 - yMix) + bottom * yMix;
-}
-
-function fractalNoise(x: number, y: number) {
-  return (
-    valueNoise(x, y) * 0.57 +
-    valueNoise(x * 2.03 + 17.1, y * 2.03 - 9.4) * 0.28 +
-    valueNoise(x * 4.11 - 6.8, y * 4.11 + 12.7) * 0.15
+export function projectCelestialCoordinate(
+  rightAscensionDegrees: number,
+  declinationDegrees: number,
+  options: CelestialProjectionOptions,
+) {
+  const camera = buildCamera(options as SkyProjectionOptions, options.width / options.height);
+  const direction = equatorialVector(
+    radians(rightAscensionDegrees),
+    radians(declinationDegrees),
   );
-}
+  const forward = dot(direction, camera.center);
 
-function wrapRadians(angle: number) {
-  return Math.atan2(Math.sin(angle), Math.cos(angle));
+  if (forward <= 0) return null;
+
+  const normalizedX =
+    dot(direction, camera.right) / (forward * camera.tangentX);
+  const normalizedY =
+    dot(direction, camera.down) / (forward * camera.tangentY);
+
+  return {
+    x: (normalizedX + 1) / 2,
+    y: (normalizedY + 1) / 2,
+    visible: Math.abs(normalizedX) <= 1.02 && Math.abs(normalizedY) <= 1.02,
+  };
 }
 
 function rayForScreen(x: number, y: number, camera: CameraBasis): Vector3 {
@@ -208,26 +224,67 @@ function galacticCoordinates(ray: Vector3) {
   };
 }
 
-function seededRandom(seed: number) {
-  let state = seed >>> 0;
-  return () => {
-    state += 0x6d2b79f5;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+function sourcePixelsFor(image: HTMLImageElement): SourcePixels | null {
+  const cached = sourcePixelCache.get(image);
+  if (cached) return cached;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  context.drawImage(image, 0, 0);
+  const source = context.getImageData(0, 0, canvas.width, canvas.height);
+  const result = {
+    width: source.width,
+    height: source.height,
+    pixels: source.data,
   };
+  sourcePixelCache.set(image, result);
+  return result;
+}
+
+function sampleSource(
+  source: SourcePixels,
+  longitude: number,
+  latitude: number,
+): [number, number, number] {
+  // The Gaia EDR3 map is galactic equirectangular with longitude increasing
+  // toward the left, so Galactic Centre is at the texture midpoint.
+  const sourceX =
+    positiveModulo(0.5 - longitude / (Math.PI * 2), 1) * source.width;
+  const sourceY =
+    clamp(0.5 - latitude / Math.PI, 0, 1) * (source.height - 1);
+  const x0 = Math.floor(sourceX) % source.width;
+  const y0 = Math.floor(sourceY);
+  const x1 = (x0 + 1) % source.width;
+  const y1 = Math.min(y0 + 1, source.height - 1);
+  const xMix = sourceX - Math.floor(sourceX);
+  const yMix = sourceY - y0;
+  const color: [number, number, number] = [0, 0, 0];
+
+  for (let channel = 0; channel < 3; channel += 1) {
+    const topLeft = source.pixels[(y0 * source.width + x0) * 4 + channel];
+    const topRight = source.pixels[(y0 * source.width + x1) * 4 + channel];
+    const bottomLeft = source.pixels[(y1 * source.width + x0) * 4 + channel];
+    const bottomRight = source.pixels[(y1 * source.width + x1) * 4 + channel];
+    const top = topLeft + (topRight - topLeft) * xMix;
+    const bottom = bottomLeft + (bottomRight - bottomLeft) * xMix;
+    color[channel] = top + (bottom - top) * yMix;
+  }
+
+  return color;
 }
 
 function starColor(colorIndex: number | null): [number, number, number] {
-  if (colorIndex === null) return [239, 230, 216];
+  if (colorIndex === null) return [244, 236, 222];
 
   const anchors: Array<[number, [number, number, number]]> = [
-    [-0.35, [208, 218, 234]],
-    [0.15, [238, 235, 226]],
-    [0.75, [255, 226, 188]],
-    [1.55, [255, 184, 118]],
-    [2.1, [238, 142, 88]],
+    [-0.35, [148, 190, 255]],
+    [0.15, [235, 238, 249]],
+    [0.75, [255, 218, 156]],
+    [1.55, [255, 151, 69]],
+    [2.1, [255, 103, 58]],
   ];
   const value = clamp(colorIndex, anchors[0][0], anchors[anchors.length - 1][0]);
 
@@ -245,53 +302,11 @@ function starColor(colorIndex: number | null): [number, number, number] {
   return anchors[anchors.length - 1][1];
 }
 
-function drawProceduralStars(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  camera: CameraBasis,
-) {
-  const random = seededRandom(0x71e2c95);
-  const candidates = Math.round(
-    clamp((width * height) / 28, 9000, 34000),
-  );
-  context.save();
-  context.globalCompositeOperation = "screen";
-
-  for (let index = 0; index < candidates; index += 1) {
-    const x = random() * width;
-    const y = random() * height;
-    const ray = rayForScreen((x / width) * 2 - 1, (y / height) * 2 - 1, camera);
-    const { longitude, latitude } = galacticCoordinates(ray);
-    const planeDensity = Math.exp(-Math.abs(latitude) / 0.16);
-    const coreDensity = Math.exp(
-      -Math.hypot(wrapRadians(longitude) / 0.8, latitude / 0.24),
-    );
-    if (random() > 0.06 + planeDensity * 0.62 + coreDensity * 0.15) continue;
-
-    const warmth = random();
-    const radius = 0.23 + planeDensity * 0.07 + random() ** 6 * 1.24;
-    const alpha =
-      0.16 + planeDensity * 0.08 + random() ** 2.8 * (0.52 + planeDensity * 0.2);
-    const color =
-      warmth > 0.84
-        ? [242, 183, 125]
-        : warmth < 0.07
-          ? [211, 220, 229]
-          : [239, 229, 211];
-    context.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
-    context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
-    context.fill();
-  }
-
-  context.restore();
-}
-
 function drawCatalogStars(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
+  renderScale: number,
   camera: CameraBasis,
   stars: CelestialStar[],
 ) {
@@ -311,15 +326,65 @@ function drawCatalogStars(
 
     const x = ((normalizedX + 1) / 2) * width;
     const y = ((normalizedY + 1) / 2) * height;
+    const vignette = opticalVignette(normalizedX, normalizedY);
+
+    if (star.magnitude > 6.5) {
+      const visibility = clamp((8.5 - star.magnitude) / 2, 0, 1);
+      const size = Math.max(
+        1.08,
+        (0.5 + visibility ** 0.85 * 0.56) * renderScale,
+      ) * 1.04;
+      const alpha = clamp(
+        (0.37 + visibility * 0.46) * vignette * 1.18,
+        0,
+        1,
+      );
+      const [red, green, blue] = starColor(star.colorIndex);
+      context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+      context.fillRect(x - size / 2, y - size / 2, size, size);
+      continue;
+    }
+
     const brightness = clamp((6.5 - star.magnitude) / 7.96, 0, 1);
-    const radius = 0.48 + brightness ** 1.9 * 2.7;
-    const alpha = 0.52 + brightness * 0.46;
+    const radius = Math.max(
+      0.74,
+      (0.44 + brightness ** 1.85 * 2.02) * renderScale,
+    ) * 1.04;
+    const alpha = clamp(
+      (0.88 + brightness * 0.12) * vignette * 1.18,
+      0,
+      1,
+    );
     const [red, green, blue] = starColor(star.colorIndex);
 
-    if (star.magnitude < 1.6) {
-      const glowRadius = radius * 4.8;
+    // A minute radial color split gives the brighter catalog stars the same
+    // optical character as a wide-open camera lens without inventing stars.
+    if (star.magnitude < 3.8) {
+      const radialX = x / width - 0.5;
+      const radialY = y / height - 0.5;
+      const radialLength = Math.hypot(radialX, radialY) || 1;
+      const fringeOffset =
+        (0.15 + clamp((3.8 - star.magnitude) / 4.8, 0, 1) * 0.24) *
+        renderScale;
+      const fringeX = (radialX / radialLength) * fringeOffset;
+      const fringeY = (radialY / radialLength) * fringeOffset;
+      const fringeRadius = Math.max(0.42 * renderScale, radius * 0.58);
+
+      context.fillStyle = `rgba(92, 154, 255, ${alpha * 0.26})`;
+      context.beginPath();
+      context.arc(x - fringeX, y - fringeY, fringeRadius, 0, Math.PI * 2);
+      context.fill();
+
+      context.fillStyle = `rgba(255, 112, 67, ${alpha * 0.23})`;
+      context.beginPath();
+      context.arc(x + fringeX, y + fringeY, fringeRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    if (star.magnitude < 0.7) {
+      const glowRadius = radius * 2.8;
       const glow = context.createRadialGradient(x, y, 0, x, y, glowRadius);
-      glow.addColorStop(0, `rgba(${red}, ${green}, ${blue}, ${alpha * 0.5})`);
+      glow.addColorStop(0, `rgba(${red}, ${green}, ${blue}, ${alpha * 0.22})`);
       glow.addColorStop(1, `rgba(${red}, ${green}, ${blue}, 0)`);
       context.fillStyle = glow;
       context.beginPath();
@@ -363,28 +428,63 @@ export function parseHipparcosCatalog(source: string): CelestialStar[] {
   });
 }
 
+export function parseGaiaFaintCatalog(source: ArrayBuffer): CelestialStar[] {
+  const recordSize = 6;
+  const view = new DataView(source);
+  const stars: CelestialStar[] = [];
+
+  for (
+    let offset = 0;
+    offset + recordSize <= view.byteLength;
+    offset += recordSize
+  ) {
+    const rightAscension =
+      (view.getUint16(offset, true) / 65535) * Math.PI * 2;
+    const declination =
+      (view.getUint16(offset + 2, true) / 65535) * Math.PI - Math.PI / 2;
+    const magnitude = 6.5 + (view.getUint8(offset + 4) / 255) * 2;
+    const encodedColor = view.getUint8(offset + 5);
+    const colorIndex =
+      encodedColor === 255 ? null : (encodedColor / 254) * 4 - 0.5;
+    stars.push({ rightAscension, declination, magnitude, colorIndex });
+  }
+
+  return stars;
+}
+
 export function renderMilkyWay(
+  skyImage: HTMLImageElement,
   options: SkyProjectionOptions,
   stars: CelestialStar[],
-) {
+): RenderedSky | null {
+  const source = sourcePixelsFor(skyImage);
+  if (!source) return null;
+
+  // Preserve a genuinely high-density backing surface on Retina laptops while
+  // keeping a bounded memory footprint on very large external displays.
   const outputScale = Math.min(
-    1,
-    1600 / options.width,
-    1000 / options.height,
+    options.pixelRatio,
+    3840 / options.width,
+    2400 / options.height,
   );
   const outputWidth = Math.max(1, Math.round(options.width * outputScale));
   const outputHeight = Math.max(1, Math.round(options.height * outputScale));
-  const canvas = document.createElement("canvas");
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
-  const context = canvas.getContext("2d");
-  if (!context) return null;
+  const diffuseOutput = document.createElement("canvas");
+  diffuseOutput.width = outputWidth;
+  diffuseOutput.height = outputHeight;
+  const diffuseOutputContext = diffuseOutput.getContext("2d");
+  if (!diffuseOutputContext) return null;
 
-  // The diffuse model is intentionally lower resolution; catalog stars are
-  // drawn afterward at screen resolution so they remain crisp.
-  const diffuseScale = 0.62;
-  const diffuseWidth = Math.max(1, Math.round(outputWidth * diffuseScale));
-  const diffuseHeight = Math.max(1, Math.round(outputHeight * diffuseScale));
+  // The photographic layer used to render at CSS-pixel resolution and then be
+  // enlarged into the Retina canvas. Reproject it above CSS resolution so the
+  // dust lanes and integrated star clouds retain their fine structure.
+  const diffuseScale = Math.min(
+    outputScale,
+    2560 / options.width,
+    2200 / options.height,
+  );
+  const diffuseWidth = Math.max(1, Math.round(options.width * diffuseScale));
+  const diffuseHeight = Math.max(1, Math.round(options.height * diffuseScale));
   const diffuseCanvas = document.createElement("canvas");
   diffuseCanvas.width = diffuseWidth;
   diffuseCanvas.height = diffuseHeight;
@@ -402,102 +502,53 @@ export function renderMilkyWay(
       const screenX = ((x + 0.5) / diffuseWidth) * 2 - 1;
       const ray = rayForScreen(screenX, screenY, camera);
       const { longitude, latitude } = galacticCoordinates(ray);
-      const coreLongitude = wrapRadians(longitude);
-      const absoluteLatitude = Math.abs(latitude);
-      const largeClouds = fractalNoise(
-        longitude * 3.4 + 31.4,
-        latitude * 3.4 - 16.8,
+      const [sourceRed, sourceGreen, sourceBlue] = sampleSource(
+        source,
+        longitude,
+        latitude,
       );
-      const fineClouds = fractalNoise(
-        longitude * 10.8 - 8.1,
-        latitude * 10.8 + 43.7,
+      const luminance =
+        (sourceRed * 0.22 + sourceGreen * 0.68 + sourceBlue * 0.1) / 255;
+      const signal = Math.pow(
+        clamp((luminance - 0.1) / 0.9, 0, 1),
+        2.55,
       );
-      const dustClouds = fractalNoise(
-        longitude * 23.5 + 71.2,
-        latitude * 23.5 - 29.6,
-      );
-      const structureNoise = fractalNoise(
-        longitude * 9.4 - 51.3,
-        latitude * 9.4 + 8.2,
-      );
-      const planeWidth = 0.145 + 0.055 * largeClouds;
-      const thinDisk = Math.exp(-Math.pow(absoluteLatitude / planeWidth, 1.38));
-      const thickDisk = Math.exp(-Math.pow(absoluteLatitude / 0.42, 1.14));
-      const bulgeRadius = Math.hypot(coreLongitude / 0.72, latitude / 0.26);
-      const bulge = Math.exp(-Math.pow(bulgeRadius, 1.08));
-      const centerBias = 0.28 + 0.72 * Math.exp(-Math.abs(coreLongitude) / 1.2);
-      const dustCenter =
-        -0.008 +
-        Math.sin(longitude * 2.35 + 0.4) * 0.015 +
-        (largeClouds - 0.5) * 0.045;
-      const dustLane = Math.exp(
-        -Math.pow(
-          Math.abs(latitude - dustCenter) /
-            (0.022 + dustClouds * 0.021),
-          1.42,
-        ),
-      );
-      const patchyDust =
-        thinDisk *
-        smoothstep(0.44, 0.74, dustClouds) *
-        (0.42 + structureNoise * 0.58);
-      const centerLaneStrength =
-        smoothstep(0.38, 0.74, structureNoise) *
-        (0.12 + smoothstep(0.4, 0.75, dustClouds) * 0.43);
-      const extinction = clamp(
-        1 -
-          dustLane * centerLaneStrength -
-          patchyDust * 0.42,
-        0.26,
-        1,
-      );
-      const stellarClouds =
-        largeClouds * 0.52 + fineClouds * 0.29 + structureNoise * 0.19;
-      const cloudBrightness =
-        0.17 + Math.pow(clamp(stellarClouds, 0, 1), 1.72) * 1.74;
-      const galaxyLight =
-        (thinDisk * (0.24 + centerBias * 0.52) +
-          thickDisk * 0.052 +
-          bulge * 0.78) *
-        cloudBrightness *
-        extinction;
-      const warmCore = bulge * (0.2 + largeClouds * 0.2) * extinction;
-      const edgeDistance = Math.hypot(screenX * 0.72, screenY * 0.7);
-      const vignette = clamp(1.06 - edgeDistance * 0.32, 0.68, 1);
-      const grain = (integerHash(x + 193, y - 271) - 0.5) * 2.2;
-      const stellarGrain =
-        thinDisk *
-        Math.pow(integerHash(x * 3 + 617, y * 3 - 389), 13) *
-        (24 + centerBias * 24 + bulge * 34);
+      const sourceWarmth = clamp((sourceRed - sourceBlue) / 255, -0.1, 0.45);
+      const highlight = signal ** 1.5;
+      const midtone = signal * (1 - signal) * 4;
+      const vignette = opticalVignette(screenX, screenY);
       const offset = (y * diffuseWidth + x) * 4;
 
       pixels[offset] = clamp(
-        (2.6 +
-          galaxyLight * 166 +
-          warmCore * 48 +
-          stellarGrain +
-          grain) *
-          vignette,
+        (
+          1 +
+          signal * 172 +
+          sourceWarmth * signal * 38 +
+          highlight * 45 +
+          midtone * 10
+        ) * vignette,
         0,
         255,
       );
       pixels[offset + 1] = clamp(
-        (2.5 +
-          galaxyLight * 123 +
-          warmCore * 28 +
-          stellarGrain * 0.9 +
-          grain * 0.74) *
-          vignette,
+        (
+          0.8 +
+          signal * 104 +
+          sourceWarmth * signal * 9 +
+          highlight * 34 +
+          midtone * 2
+        ) * vignette,
         0,
         255,
       );
       pixels[offset + 2] = clamp(
-        (3.5 +
-          galaxyLight * 88 +
-          warmCore * 12 +
-          stellarGrain * 0.74 +
-          grain * 0.62) *
-          vignette,
+        (
+          0.9 +
+          signal * 72 +
+          sourceWarmth * signal +
+          highlight * 30 +
+          midtone * 4
+        ) * vignette,
         0,
         255,
       );
@@ -506,10 +557,29 @@ export function renderMilkyWay(
   }
 
   diffuseContext.putImageData(image, 0, 0);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(diffuseCanvas, 0, 0, outputWidth, outputHeight);
-  drawProceduralStars(context, outputWidth, outputHeight, camera);
-  drawCatalogStars(context, outputWidth, outputHeight, camera, stars);
-  return canvas;
+  diffuseOutputContext.imageSmoothingEnabled = true;
+  diffuseOutputContext.imageSmoothingQuality = "high";
+  diffuseOutputContext.drawImage(
+    diffuseCanvas,
+    0,
+    0,
+    outputWidth,
+    outputHeight,
+  );
+
+  const starOutput = document.createElement("canvas");
+  starOutput.width = outputWidth;
+  starOutput.height = outputHeight;
+  const starOutputContext = starOutput.getContext("2d");
+  if (!starOutputContext) return null;
+  drawCatalogStars(
+    starOutputContext,
+    outputWidth,
+    outputHeight,
+    outputScale,
+    camera,
+    stars,
+  );
+
+  return { diffuse: diffuseOutput, stars: starOutput };
 }

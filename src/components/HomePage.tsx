@@ -32,7 +32,10 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
 
       <OrbitalField activePanel={activePanel} onSelect={setActivePanel} />
 
-      <div className="orbit-identity" aria-label="Trent Conley, AI Engineer at SpaceX">
+      <div
+        className={`orbit-identity${activePanel ? " is-panel-open" : ""}`}
+        aria-label="Trent Conley, AI Engineer at SpaceX"
+      >
         <h1>Trent Conley</h1>
         <p>AI Engineer at SpaceX</p>
       </div>
@@ -119,6 +122,14 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
         ) : null}
       </section>
 
+      <a
+        className="sky-credit"
+        href="https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_32"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Gaia EDR3 · ESA/Gaia/DPAC
+      </a>
     </div>
   );
 }

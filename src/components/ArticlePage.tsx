@@ -1,20 +1,18 @@
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 
 const mediumUrl =
   "https://medium.com/@trentconley/would-you-risk-everything-on-a-coin-flip-if-the-math-told-you-to-89aa39a5a6bc";
 const sourceUrl = "https://github.com/TrentConley/parallel-betting";
 
 type EquationProps = {
-  src: string;
-  alt: string;
-  width: number;
-  height: number;
+  label: string;
+  children: ReactNode;
 };
 
-function Equation({ src, alt, width, height }: EquationProps) {
+function Equation({ label, children }: EquationProps) {
   return (
-    <figure className="article-equation" aria-label={alt}>
-      <img src={src} alt={alt} width={width} height={height} />
+    <figure className="article-equation" aria-label={label}>
+      <div className="article-math">{children}</div>
     </figure>
   );
 }
@@ -118,19 +116,44 @@ export function ArticlePage() {
 
             <h2>Optimize the outcome you&apos;ll actually see</h2>
             <p>First, let&apos;s define everything more formally:</p>
-            <Equation
-              src="/blog/parallel-betting/01-definitions.png"
-              alt="h equals number of heads; b equals bet fraction; M sub i equals initial money; M sub f equals final money"
-              width={291}
-              height={218}
-            />
+            <Equation label="h equals number of heads; b equals bet fraction; M sub i equals initial money; M sub f equals final money">
+              <math display="block" aria-hidden="true">
+                <mtable columnalign="right left" rowspacing="0.55em">
+                  <mtr>
+                    <mtd><mi>h</mi></mtd>
+                    <mtd><mo>=</mo><mtext>number of heads</mtext></mtd>
+                  </mtr>
+                  <mtr>
+                    <mtd><mi>b</mi></mtd>
+                    <mtd><mo>=</mo><mtext>bet fraction</mtext></mtd>
+                  </mtr>
+                  <mtr>
+                    <mtd><msub><mi>M</mi><mi>i</mi></msub></mtd>
+                    <mtd><mo>=</mo><mtext>initial money</mtext></mtd>
+                  </mtr>
+                  <mtr>
+                    <mtd><msub><mi>M</mi><mi>f</mi></msub></mtd>
+                    <mtd><mo>=</mo><mtext>final money</mtext></mtd>
+                  </mtr>
+                </mtable>
+              </math>
+            </Equation>
             <p>Then, we can define your final bankroll as:</p>
-            <Equation
-              src="/blog/parallel-betting/02-final-money.png"
-              alt="Final money equals initial money times one plus two b to the h, times one minus b to the one hundred minus h"
-              width={434}
-              height={74}
-            />
+            <Equation label="Final money equals initial money times one plus two b to the h, times one minus b to the one hundred minus h">
+              <math display="block" aria-hidden="true">
+                <msub><mi>M</mi><mi>f</mi></msub>
+                <mo>=</mo>
+                <msub><mi>M</mi><mi>i</mi></msub>
+                <msup>
+                  <mrow><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mi>b</mi><mo>)</mo></mrow>
+                  <mi>h</mi>
+                </msup>
+                <msup>
+                  <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mi>b</mi><mo>)</mo></mrow>
+                  <mrow><mn>100</mn><mo>−</mo><mi>h</mi></mrow>
+                </msup>
+              </math>
+            </Equation>
             <p>
               Great. Now what does the median outcome look like? I&apos;d argue that
               it is when there are 50 heads and 50 tails out of intuition,
@@ -139,29 +162,87 @@ export function ArticlePage() {
               simple.
             </p>
             <p>So, our median-outcome final money is:</p>
-            <Equation
-              src="/blog/parallel-betting/03-median-substitution.png"
-              alt="Median h equals fifty; final money equals initial money times one plus two b to the fiftieth, times one minus b to the fiftieth"
-              width={398}
-              height={135}
-            />
+            <Equation label="Median h equals fifty; final money equals initial money times one plus two b to the fiftieth, times one minus b to the fiftieth">
+              <math display="block" aria-hidden="true">
+                <mtable rowspacing="0.65em">
+                  <mtr>
+                    <mtd>
+                      <msub><mi>h</mi><mtext>median</mtext></msub>
+                      <mo>=</mo><mn>50</mn>
+                    </mtd>
+                  </mtr>
+                  <mtr>
+                    <mtd>
+                      <msub><mi>M</mi><mi>f</mi></msub><mo>=</mo>
+                      <msub><mi>M</mi><mi>i</mi></msub>
+                      <msup>
+                        <mrow><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mi>b</mi><mo>)</mo></mrow>
+                        <mn>50</mn>
+                      </msup>
+                      <msup>
+                        <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mi>b</mi><mo>)</mo></mrow>
+                        <mn>50</mn>
+                      </msup>
+                    </mtd>
+                  </mtr>
+                </mtable>
+              </math>
+            </Equation>
             <p>
               We now have something to optimize. Let&apos;s take the derivative of
               final money with respect to the bet fraction.
             </p>
-            <Equation
-              src="/blog/parallel-betting/05-simplified-derivative.png"
-              alt="The derivative of final money with respect to b simplifies to fifty times initial money, times one plus two b to the forty-ninth, times one minus b to the forty-ninth, times one minus four b"
-              width={880}
-              height={379}
-            />
+            <Equation label="The derivative of final money with respect to b simplifies to fifty times initial money, times one plus two b to the forty-ninth, times one minus b to the forty-ninth, times one minus four b">
+              <math display="block" aria-hidden="true">
+                <mfrac>
+                  <mrow><mi>d</mi><msub><mi>M</mi><mi>f</mi></msub></mrow>
+                  <mrow><mi>d</mi><mi>b</mi></mrow>
+                </mfrac>
+                <mo>=</mo><mn>50</mn><msub><mi>M</mi><mi>i</mi></msub>
+                <msup>
+                  <mrow><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mi>b</mi><mo>)</mo></mrow>
+                  <mn>49</mn>
+                </msup>
+                <msup>
+                  <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mi>b</mi><mo>)</mo></mrow>
+                  <mn>49</mn>
+                </msup>
+                <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mn>4</mn><mi>b</mi><mo>)</mo></mrow>
+              </math>
+            </Equation>
             <p>Now, let&apos;s set it to zero to find our critical points.</p>
-            <Equation
-              src="/blog/parallel-betting/06-critical-points.png"
-              alt="The critical points for b are negative one half, one quarter, and one"
-              width={473}
-              height={452}
-            />
+            <Equation label="The critical points for b are negative one half, one quarter, and one">
+              <math display="block" aria-hidden="true">
+                <mtable rowspacing="0.7em">
+                  <mtr>
+                    <mtd>
+                      <mn>50</mn><msub><mi>M</mi><mi>i</mi></msub>
+                      <msup>
+                        <mrow><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mi>b</mi><mo>)</mo></mrow>
+                        <mn>49</mn>
+                      </msup>
+                      <msup>
+                        <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mi>b</mi><mo>)</mo></mrow>
+                        <mn>49</mn>
+                      </msup>
+                      <mrow><mo>(</mo><mn>1</mn><mo>−</mo><mn>4</mn><mi>b</mi><mo>)</mo></mrow>
+                      <mo>=</mo><mn>0</mn>
+                    </mtd>
+                  </mtr>
+                  <mtr>
+                    <mtd>
+                      <mi>b</mi><mo>∈</mo>
+                      <mrow>
+                        <mo>{"{"}</mo>
+                        <mo>−</mo><mfrac><mn>1</mn><mn>2</mn></mfrac>
+                        <mo>,</mo><mfrac><mn>1</mn><mn>4</mn></mfrac>
+                        <mo>,</mo><mn>1</mn><mo>{"}"}</mo>
+                      </mrow>
+                    </mtd>
+                  </mtr>
+                </mtable>
+              </math>
+            </Equation>
             <p>
               The bet fraction can&apos;t be negative, and if it is 1, then our
               final money is zero, so it must be 0.25. We need to bet 25% of our
