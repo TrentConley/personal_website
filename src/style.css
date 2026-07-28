@@ -1,8 +1,8 @@
 :root {
-  --night: #080706;
-  --night-soft: #11100e;
-  --cream: #eee6d8;
-  --cream-soft: #d8cdbd;
+  --night: #070708;
+  --night-soft: #111113;
+  --cream: #eeece7;
+  --cream-soft: #d8d4cd;
   --rust: #c45f3d;
   --gold: #c99a5a;
   --paper: #f2ede4;
@@ -57,28 +57,10 @@ img {
   min-height: 100svh;
   overflow: hidden;
   color: var(--cream);
-  background: radial-gradient(circle at center, #14100d 0, #0a0807 34%, #060505 76%);
+  background: radial-gradient(circle at center, #111112 0, #09090a 38%, #050506 78%);
   isolation: isolate;
 }
 
-.orbit-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  width: 100%;
-  height: 84px;
-  padding: 0 clamp(1.25rem, 4vw, 4rem);
-  align-items: center;
-  justify-content: space-between;
-  color: rgba(238, 230, 216, 0.55);
-  font-size: 0.68rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.orbit-header__mark,
 .article-nav__mark {
   display: grid;
   width: 36px;
@@ -93,8 +75,8 @@ img {
   transition: color 180ms ease, background 180ms ease, transform 180ms ease;
 }
 
-.orbit-header__mark:hover,
-.orbit-header__mark:focus-visible {
+.article-nav__mark:hover,
+.article-nav__mark:focus-visible {
   color: var(--night);
   background: var(--cream);
   transform: rotate(-8deg);
@@ -865,20 +847,6 @@ img {
 }
 
 @media (max-width: 560px) {
-  .orbit-header {
-    height: 70px;
-    padding: 0 1rem;
-  }
-
-  .orbit-header > span {
-    display: none;
-  }
-
-  .orbit-header__mark {
-    width: 44px;
-    height: 44px;
-  }
-
   .orbit-identity {
     top: 62%;
     width: calc(100% - 2.5rem);

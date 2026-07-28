@@ -1,6 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="#060811" />
-  <ellipse cx="32" cy="32" rx="22" ry="8" fill="none" stroke="#eee6d8" stroke-width="2" transform="rotate(-18 32 32)" />
-  <circle cx="32" cy="32" r="9" fill="#c99a5a" />
-  <circle cx="17" cy="38" r="2.5" fill="#c45f3d" />
+  <rect width="64" height="64" rx="15" fill="#070708" />
+  <g fill="none" stroke="#a39d93" stroke-width="2" opacity="0.72" transform="rotate(-19 32 32)">
+    <ellipse cx="32" cy="32" rx="26" ry="10" />
+    <ellipse cx="32" cy="32" rx="19" ry="7" />
+    <ellipse cx="32" cy="32" rx="12" ry="4.5" />
+  </g>
+  <g transform="rotate(-19 32 32)">
+    <circle cx="58" cy="32" r="2.8" fill="#d8a24c" />
+    <circle cx="13" cy="32" r="2.6" fill="#ded2bd" />
+    <circle cx="38" cy="36" r="2.5" fill="#ad7253" />
+  </g>
+  <circle cx="32" cy="32" r="5.5" fill="#eeeae2" />
+  <circle cx="32" cy="32" r="2.2" fill="#fffdf8" />
 </svg>

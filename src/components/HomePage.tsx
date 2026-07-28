@@ -23,13 +23,6 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
 
   return (
     <div className="orbit-page">
-      <header className="orbit-header">
-        <a href="/" className="orbit-header__mark" aria-label="Trent Conley home">
-          TC
-        </a>
-        <span>AI Engineer · SpaceX</span>
-      </header>
-
       <OrbitalField activePanel={activePanel} onSelect={setActivePanel} />
 
       <div

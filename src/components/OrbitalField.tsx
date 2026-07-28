@@ -188,7 +188,6 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
     let width = 0;
     let height = 0;
     let pixelRatio = 1;
@@ -317,55 +316,16 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
 
     function draw(timestamp: number) {
       ctx.clearRect(0, 0, width, height);
-      pointer.x += (pointer.targetX - pointer.x) * 0.035;
-      pointer.y += (pointer.targetY - pointer.y) * 0.035;
-
-      const baseGeometry = orbitGeometry();
-      const geometry = reduceMotion
-        ? baseGeometry
-        : {
-            ...baseGeometry,
-            projection: baseGeometry.projection * (1 + pointer.y * 0.1),
-            viewRotation: baseGeometry.viewRotation + pointer.x * 0.035,
-          };
+      const geometry = orbitGeometry();
       const compact = geometry.compact;
 
       if (renderedSky) {
-        ctx.save();
-        ctx.globalAlpha = 1;
-        const drawSkyLayer = (
-          layer: HTMLCanvasElement,
-          scale: number,
-          horizontalDepth: number,
-          verticalDepth: number,
-        ) => {
-          const drawWidth = width * scale;
-          const drawHeight = height * scale;
-          const drawX =
-            (width - drawWidth) / 2 - pointer.x * horizontalDepth;
-          const drawY =
-            (height - drawHeight) / 2 - pointer.y * verticalDepth;
-          ctx.drawImage(layer, drawX, drawY, drawWidth, drawHeight);
-        };
-
-        const skyScale = compact ? 1.035 : 1.025;
-        drawSkyLayer(
-          renderedSky.diffuse,
-          skyScale,
-          compact ? 7 : 15,
-          compact ? 6 : 11,
-        );
-        drawSkyLayer(
-          renderedSky.stars,
-          skyScale,
-          compact ? 11 : 27,
-          compact ? 9 : 19,
-        );
-        ctx.restore();
+        ctx.drawImage(renderedSky.diffuse, 0, 0, width, height);
+        ctx.drawImage(renderedSky.stars, 0, 0, width, height);
       }
 
-      const centerX = width / 2 + pointer.x * 14;
-      const centerY = height * (compact ? 0.62 : 0.5) + pointer.y * 11;
+      const centerX = width / 2;
+      const centerY = height * (compact ? 0.62 : 0.5);
       const exclusionX = compact
         ? Math.min(width * 0.38, 150)
         : Math.min(width * 0.3, 330);
@@ -485,14 +445,6 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
         node.tabIndex = hiddenBehindName ? -1 : 0;
       });
 
-      const skyScale = compact ? 1.035 : 1.025;
-      const skyWidth = width * skyScale;
-      const skyHeight = height * skyScale;
-      const skyLeft =
-        (width - skyWidth) / 2 - pointer.x * (compact ? 11 : 27);
-      const skyTop =
-        (height - skyHeight) / 2 - pointer.y * (compact ? 9 : 19);
-
       starDiscoveries.forEach((discovery, index) => {
         const node = discoveryRefs.current[index];
         if (!node) return;
@@ -502,13 +454,13 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
           {
             width,
             height,
-            orbitProjection: baseGeometry.projection,
-            orbitRotation: baseGeometry.viewRotation,
+            orbitProjection: geometry.projection,
+            orbitRotation: geometry.viewRotation,
             compact,
           },
         );
-        const pointX = projection ? skyLeft + projection.x * skyWidth : -100;
-        const pointY = projection ? skyTop + projection.y * skyHeight : -100;
+        const pointX = projection ? projection.x * width : -100;
+        const pointY = projection ? projection.y * height : -100;
         const clearOfEdges =
           pointX > (compact ? 18 : 28) &&
           pointX < width - (compact ? 18 : 28) &&
@@ -537,30 +489,6 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
 
       if (!reduceMotion) frame = window.requestAnimationFrame(draw);
     }
-
-    const resetPointer = () => {
-      pointer.targetX = 0;
-      pointer.targetY = 0;
-    };
-
-    const handlePointer = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      if (
-        event.clientX < rect.left ||
-        event.clientX > rect.right ||
-        event.clientY < rect.top ||
-        event.clientY > rect.bottom
-      ) {
-        resetPointer();
-        return;
-      }
-      pointer.targetX = (event.clientX - rect.left) / rect.width - 0.5;
-      pointer.targetY = (event.clientY - rect.top) / rect.height - 0.5;
-    };
-
-    const handlePointerEnd = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse") resetPointer();
-    };
 
     const handleSkyLoad = () => {
       if (disposed) return;
@@ -616,10 +544,6 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       },
     );
     window.addEventListener("resize", resize);
-    window.addEventListener("pointermove", handlePointer);
-    window.addEventListener("pointerup", handlePointerEnd);
-    window.addEventListener("pointercancel", handlePointerEnd);
-    window.addEventListener("blur", resetPointer);
     if (!reduceMotion) frame = window.requestAnimationFrame(draw);
 
     return () => {
@@ -630,10 +554,6 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       skyImage.removeEventListener("load", handleSkyLoad);
       skyImage.removeEventListener("error", handleSkyError);
       window.removeEventListener("resize", resize);
-      window.removeEventListener("pointermove", handlePointer);
-      window.removeEventListener("pointerup", handlePointerEnd);
-      window.removeEventListener("pointercancel", handlePointerEnd);
-      window.removeEventListener("blur", resetPointer);
     };
   }, []);
 

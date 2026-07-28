@@ -513,42 +513,34 @@ export function renderMilkyWay(
         clamp((luminance - 0.1) / 0.9, 0, 1),
         2.55,
       );
-      const sourceWarmth = clamp((sourceRed - sourceBlue) / 255, -0.1, 0.45);
       const highlight = signal ** 1.5;
       const midtone = signal * (1 - signal) * 4;
+      const redChroma = sourceRed / 255 - luminance;
+      const greenChroma = sourceGreen / 255 - luminance;
+      const blueChroma = sourceBlue / 255 - luminance;
+      const density = signal * 136 + highlight * 42 + midtone * 5;
+      const colorStrength = signal * 340;
       const vignette = opticalVignette(screenX, screenY);
       const offset = (y * diffuseWidth + x) * 4;
 
       pixels[offset] = clamp(
-        (
-          1 +
-          signal * 172 +
-          sourceWarmth * signal * 38 +
-          highlight * 45 +
-          midtone * 10
-        ) * vignette,
+        (1 + density + highlight * 20 + redChroma * colorStrength) * vignette,
         0,
         255,
       );
       pixels[offset + 1] = clamp(
         (
-          0.8 +
-          signal * 104 +
-          sourceWarmth * signal * 9 +
-          highlight * 34 +
-          midtone * 2
+          1 +
+          density * 0.985 +
+          highlight * 7 +
+          greenChroma * colorStrength * 0.62
         ) * vignette,
         0,
         255,
       );
       pixels[offset + 2] = clamp(
-        (
-          0.9 +
-          signal * 72 +
-          sourceWarmth * signal +
-          highlight * 30 +
-          midtone * 4
-        ) * vignette,
+        (1.6 + density + blueChroma * colorStrength * 1.08) *
+          vignette,
         0,
         255,
       );
