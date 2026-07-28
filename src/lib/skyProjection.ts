@@ -32,6 +32,8 @@ type CameraBasis = {
   down: Vector3;
   tangentX: number;
   tangentY: number;
+  offsetX: number;
+  offsetY: number;
 };
 
 type SourcePixels = {
@@ -150,7 +152,7 @@ function buildCamera(
   );
   const horizontalFieldOfView = radians(options.compact ? 112 : 112);
   const tangentX = Math.tan(horizontalFieldOfView / 2);
-  const displayRoll = radians(options.compact ? -38 : -145);
+  const displayRoll = radians(options.compact ? -30 : -145);
   const right = normalize(
     combine(
       unrolledRight,
@@ -174,6 +176,11 @@ function buildCamera(
     down,
     tangentX,
     tangentY: tangentX / aspectRatio,
+    // Portrait composition uses an accurate off-axis projection so the
+    // Galactic plane becomes an edge element instead of running through the
+    // interface. Celestial labels use the same offset below.
+    offsetX: options.compact ? 0.52 : 0,
+    offsetY: options.compact ? 0.02 : 0,
   };
 }
 
@@ -192,9 +199,9 @@ export function projectCelestialCoordinate(
   if (forward <= 0) return null;
 
   const normalizedX =
-    dot(direction, camera.right) / (forward * camera.tangentX);
+    dot(direction, camera.right) / (forward * camera.tangentX) - camera.offsetX;
   const normalizedY =
-    dot(direction, camera.down) / (forward * camera.tangentY);
+    dot(direction, camera.down) / (forward * camera.tangentY) - camera.offsetY;
 
   return {
     x: (normalizedX + 1) / 2,
@@ -209,9 +216,9 @@ function rayForScreen(x: number, y: number, camera: CameraBasis): Vector3 {
       camera.center,
       1,
       camera.right,
-      x * camera.tangentX,
+      (x + camera.offsetX) * camera.tangentX,
       camera.down,
-      y * camera.tangentY,
+      (y + camera.offsetY) * camera.tangentY,
     ),
   );
 }
@@ -325,9 +332,9 @@ function drawCatalogStars(
     if (forward <= 0) continue;
 
     const normalizedX =
-      dot(direction, camera.right) / (forward * camera.tangentX);
+      dot(direction, camera.right) / (forward * camera.tangentX) - camera.offsetX;
     const normalizedY =
-      dot(direction, camera.down) / (forward * camera.tangentY);
+      dot(direction, camera.down) / (forward * camera.tangentY) - camera.offsetY;
     if (Math.abs(normalizedX) > 1.02 || Math.abs(normalizedY) > 1.02) continue;
 
     const x = ((normalizedX + 1) / 2) * width;
