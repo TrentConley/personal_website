@@ -1,4 +1,9 @@
-import { useEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
+import {
+  type CelestialStar,
+  parseHipparcosCatalog,
+  renderMilkyWay,
+} from "../lib/skyProjection";
 
 export type OrbitPanel = "projects" | "writing" | "contact";
 
@@ -7,24 +12,93 @@ type OrbitalFieldProps = {
   onSelect: (panel: OrbitPanel) => void;
 };
 
-type Star = {
-  x: number;
-  y: number;
-  radius: number;
-  depth: number;
-  phase: number;
-};
-
-const orbitItems: Array<{
+type OrbitBody = {
   id: OrbitPanel;
   label: string;
   shortLabel: string;
-  phase: number;
-}> = [
-  { id: "projects", label: "Projects", shortLabel: "P", phase: 1.55 },
-  { id: "writing", label: "Writing", shortLabel: "W", phase: 4.7 },
-  { id: "contact", label: "Contact", shortLabel: "C", phase: 3 },
+  body: "Io" | "Europa" | "Ganymede";
+  semimajorAxisKm: number;
+  eccentricity: number;
+  periodDays: number;
+  argumentOfPeriapsisDegrees: number;
+  meanAnomalyDegrees: number;
+  inclinationDegrees: number;
+  ascendingNodeDegrees: number;
+  color: string;
+};
+
+// JPL Planetary Satellite Mean Elements, epoch 2000-01-01.5 TDB.
+const orbitItems: OrbitBody[] = [
+  {
+    id: "projects",
+    label: "Projects",
+    shortLabel: "P",
+    body: "Io",
+    semimajorAxisKm: 421_800,
+    eccentricity: 0.004,
+    periodDays: 1.762732,
+    argumentOfPeriapsisDegrees: 49.1,
+    meanAnomalyDegrees: 330.9,
+    inclinationDegrees: 0,
+    ascendingNodeDegrees: 0,
+    color: "#d8a24c",
+  },
+  {
+    id: "writing",
+    label: "Writing",
+    shortLabel: "W",
+    body: "Europa",
+    semimajorAxisKm: 671_100,
+    eccentricity: 0.009,
+    periodDays: 3.525463,
+    argumentOfPeriapsisDegrees: 45,
+    meanAnomalyDegrees: 345.4,
+    inclinationDegrees: 0.5,
+    ascendingNodeDegrees: 184,
+    color: "#ded2bd",
+  },
+  {
+    id: "contact",
+    label: "Contact",
+    shortLabel: "C",
+    body: "Ganymede",
+    semimajorAxisKm: 1_070_400,
+    eccentricity: 0.001,
+    periodDays: 7.155588,
+    argumentOfPeriapsisDegrees: 198.3,
+    meanAnomalyDegrees: 324.8,
+    inclinationDegrees: 0.2,
+    ascendingNodeDegrees: 58.5,
+    color: "#ad7253",
+  },
 ];
+
+export const orbitBodyByPanel: Record<OrbitPanel, OrbitBody["body"]> = {
+  projects: "Io",
+  writing: "Europa",
+  contact: "Ganymede",
+};
+
+const radians = (degrees: number) => (degrees * Math.PI) / 180;
+// Begin at a valid, well-separated point in the measured orbital model.
+const simulationStartDays = 18.141;
+const simulationDaysPerSecond = 0.012;
+
+function solveEccentricAnomaly(meanAnomaly: number, eccentricity: number) {
+  const tau = Math.PI * 2;
+  const normalizedMeanAnomaly = ((meanAnomaly % tau) + tau) % tau;
+  let eccentricAnomaly = normalizedMeanAnomaly;
+
+  for (let step = 0; step < 5; step += 1) {
+    eccentricAnomaly -=
+      (eccentricAnomaly -
+        eccentricity * Math.sin(eccentricAnomaly) -
+        normalizedMeanAnomaly) /
+      (1 - eccentricity * Math.cos(eccentricAnomaly));
+  }
+
+  return eccentricAnomaly;
+}
 
 export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -44,52 +118,59 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
     let width = 0;
     let height = 0;
     let frame = 0;
-    let stars: Star[] = [];
+    let skyFrame = 0;
+    let renderedSky: HTMLCanvasElement | null = null;
+    let catalogStars: CelestialStar[] = [];
+    let catalogReady = false;
+    let disposed = false;
+    const catalogRequest = new AbortController();
 
     const orbitGeometry = () => {
       const compact = width < 640;
-      const short = height < 700;
-      if (compact) {
-        const maxRadius = Math.max(132, width / 2 - 27);
-        return [
-          {
-            rx: maxRadius * 0.92,
-            ry: short ? 86 : 104,
-            rotation: -0.1,
-            speed: 0.000006,
-          },
-          {
-            rx: maxRadius * 0.97,
-            ry: short ? 125 : 145,
-            rotation: 0.08,
-            speed: -0.0000045,
-          },
-          {
-            rx: maxRadius,
-            ry: short ? 160 : 182,
-            rotation: -0.04,
-            speed: 0.0000032,
-          },
-        ];
-      }
+      const outerRadius = compact
+        ? Math.max(132, width / 2 - 27)
+        : Math.min(690, width / 2 - 58);
+      const desktopProgress = Math.min(Math.max((width - 640) / 800, 0), 1);
+      const innerFraction = compact ? 0.92 : 0.76 - desktopProgress * 0.14;
+      const minimumAxis = orbitItems[0].semimajorAxisKm;
+      const maximumAxis = orbitItems[orbitItems.length - 1].semimajorAxisKm;
+      const logRange = Math.log(maximumAxis / minimumAxis);
+      const projectedOuterRadius = compact
+        ? Math.min(outerRadius * 0.9, height * 0.3)
+        : Math.min(outerRadius * 0.55, height * 0.36, 315);
 
-      const scale = Math.min(width / 1440, height / 850, 1);
-      return [
-        { rx: 470 * scale, ry: 185 * scale, rotation: -0.12, speed: 0.0000055 },
-        { rx: 585 * scale, ry: 250 * scale, rotation: 0.09, speed: -0.0000038 },
-        { rx: 690 * scale, ry: 315 * scale, rotation: -0.04, speed: 0.0000028 },
-      ];
+      return {
+        compact,
+        projection: projectedOuterRadius / outerRadius,
+        viewRotation: compact ? -0.04 : 0.2,
+        radii: orbitItems.map((item) => {
+          const logPosition =
+            Math.log(item.semimajorAxisKm / minimumAxis) / logRange;
+          return outerRadius *
+            (innerFraction + (1 - innerFraction) * logPosition);
+        }),
+      };
     };
 
-    const makeStars = () => {
-      const count = Math.min(150, Math.max(80, Math.round(width / 9)));
-      stars = Array.from({ length: count }, () => ({
-        x: Math.random(),
-        y: Math.random(),
-        radius: Math.random() * 1.05 + 0.2,
-        depth: Math.random() * 0.8 + 0.2,
-        phase: Math.random() * Math.PI * 2,
-      }));
+    const updateSky = () => {
+      if (!width || !height || disposed) return;
+      const geometry = orbitGeometry();
+      renderedSky = renderMilkyWay(
+        {
+          width,
+          height,
+          orbitProjection: geometry.projection,
+          orbitRotation: geometry.viewRotation,
+          compact: geometry.compact,
+        },
+        catalogStars,
+      );
+      if (reduceMotion) draw(0);
+    };
+
+    const scheduleSkyUpdate = () => {
+      window.cancelAnimationFrame(skyFrame);
+      skyFrame = window.requestAnimationFrame(updateSky);
     };
 
     const resize = () => {
@@ -100,23 +181,53 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      makeStars();
+      if (catalogReady) scheduleSkyUpdate();
       if (reduceMotion) draw(0);
     };
 
     const orbitPoint = (
-      angle: number,
-      orbit: ReturnType<typeof orbitGeometry>[number],
-      centerX: number,
-      centerY: number,
+      item: OrbitBody,
+      eccentricAnomaly: number,
+      displayRadius: number,
+      geometry: ReturnType<typeof orbitGeometry>,
+      centerX = 0,
+      centerY = 0,
     ) => {
-      const localX = Math.cos(angle) * orbit.rx;
-      const localY = Math.sin(angle) * orbit.ry;
-      const cos = Math.cos(orbit.rotation);
-      const sin = Math.sin(orbit.rotation);
+      const orbitalX = Math.cos(eccentricAnomaly) - item.eccentricity;
+      const orbitalY =
+        Math.sqrt(1 - item.eccentricity ** 2) * Math.sin(eccentricAnomaly);
+      const argument = radians(item.argumentOfPeriapsisDegrees);
+      const inclination = radians(item.inclinationDegrees);
+      const ascendingNode = radians(item.ascendingNodeDegrees);
+      const cosArgument = Math.cos(argument);
+      const sinArgument = Math.sin(argument);
+      const cosInclination = Math.cos(inclination);
+      const sinInclination = Math.sin(inclination);
+      const cosNode = Math.cos(ascendingNode);
+      const sinNode = Math.sin(ascendingNode);
+      const referenceX =
+        (cosNode * cosArgument - sinNode * sinArgument * cosInclination) *
+          orbitalX +
+        (-cosNode * sinArgument - sinNode * cosArgument * cosInclination) *
+          orbitalY;
+      const referenceY =
+        (sinNode * cosArgument + cosNode * sinArgument * cosInclination) *
+          orbitalX +
+        (-sinNode * sinArgument + cosNode * cosArgument * cosInclination) *
+          orbitalY;
+      const referenceZ =
+        sinArgument * sinInclination * orbitalX +
+        cosArgument * sinInclination * orbitalY;
+      const viewCos = Math.cos(geometry.viewRotation);
+      const viewSin = Math.sin(geometry.viewRotation);
+      const viewX = referenceX * viewCos - referenceY * viewSin;
+      const viewY = referenceX * viewSin + referenceY * viewCos;
+
       return {
-        x: centerX + localX * cos - localY * sin,
-        y: centerY + localX * sin + localY * cos,
+        x: centerX + viewX * displayRadius,
+        y:
+          centerY +
+          (viewY * geometry.projection - referenceZ * 0.12) * displayRadius,
       };
     };
 
@@ -125,53 +236,48 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       pointer.x += (pointer.targetX - pointer.x) * 0.035;
       pointer.y += (pointer.targetY - pointer.y) * 0.035;
 
-      for (const star of stars) {
-        const drift = reduceMotion ? 0 : timestamp * 0.002 * star.depth;
-        const x =
-          ((star.x * width + drift + width) % width) + pointer.x * 10 * star.depth;
-        const y = star.y * height + pointer.y * 7 * star.depth;
-        const alpha = reduceMotion
-          ? 0.5
-          : 0.36 + Math.sin(timestamp * 0.0012 + star.phase) * 0.14;
-        ctx.fillStyle = `rgba(239, 231, 213, ${alpha * star.depth})`;
-        ctx.beginPath();
-        ctx.arc(x, y, star.radius * star.depth, 0, Math.PI * 2);
-        ctx.fill();
+      if (renderedSky) {
+        ctx.save();
+        ctx.globalAlpha = 0.97;
+        ctx.drawImage(renderedSky, 0, 0, width, height);
+        ctx.restore();
       }
 
-      const compact = width < 640;
+      const geometry = orbitGeometry();
+      const compact = geometry.compact;
       const centerX = width / 2 + pointer.x * 9;
       const centerY = height * (compact ? 0.46 : 0.5) + pointer.y * 7;
-      const orbits = orbitGeometry();
-      const exclusionX = compact ? Math.min(width * 0.38, 150) : Math.min(width * 0.3, 330);
+      const exclusionX = compact
+        ? Math.min(width * 0.38, 150)
+        : Math.min(width * 0.3, 330);
       const exclusionY = compact ? 58 : 78;
 
       ctx.save();
       ctx.translate(centerX, centerY);
-      for (const orbit of orbits) {
+      orbitItems.forEach((item, index) => {
         ctx.beginPath();
         let drawing = false;
         const segments = 260;
 
         for (let segment = 0; segment <= segments; segment += 1) {
-          const angle = (segment / segments) * Math.PI * 2;
-          const x = Math.cos(angle) * orbit.rx;
-          const y = Math.sin(angle) * orbit.ry;
-          const cos = Math.cos(orbit.rotation);
-          const sin = Math.sin(orbit.rotation);
-          const rotatedX = x * cos - y * sin;
-          const rotatedY = x * sin + y * cos;
+          const eccentricAnomaly = (segment / segments) * Math.PI * 2;
+          const point = orbitPoint(
+            item,
+            eccentricAnomaly,
+            geometry.radii[index],
+            geometry,
+          );
           const insideNameGap =
-            Math.pow(rotatedX / exclusionX, 4) +
-              Math.pow(rotatedY / exclusionY, 4) <
+            Math.pow(point.x / exclusionX, 4) +
+              Math.pow(point.y / exclusionY, 4) <
             1;
 
           if (insideNameGap) {
             drawing = false;
           } else if (drawing) {
-            ctx.lineTo(rotatedX, rotatedY);
+            ctx.lineTo(point.x, point.y);
           } else {
-            ctx.moveTo(rotatedX, rotatedY);
+            ctx.moveTo(point.x, point.y);
             drawing = true;
           }
         }
@@ -179,7 +285,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
         ctx.strokeStyle = "rgba(231, 219, 196, 0.16)";
         ctx.lineWidth = 0.75;
         ctx.stroke();
-      }
+      });
 
       const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 82);
       core.addColorStop(0, "rgba(255, 238, 202, 0.15)");
@@ -191,12 +297,28 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       ctx.fill();
       ctx.restore();
 
+      const simulatedDays =
+        simulationStartDays +
+        (reduceMotion ? 0 : (timestamp / 1000) * simulationDaysPerSecond);
+
       orbitItems.forEach((item, index) => {
         const node = nodeRefs.current[index];
         if (!node) return;
-        const orbit = orbits[index];
-        const angle = item.phase + (reduceMotion ? 0 : timestamp * orbit.speed);
-        const point = orbitPoint(angle, orbit, centerX, centerY);
+        const meanAnomaly =
+          radians(item.meanAnomalyDegrees) +
+          (simulatedDays / item.periodDays) * Math.PI * 2;
+        const eccentricAnomaly = solveEccentricAnomaly(
+          meanAnomaly,
+          item.eccentricity,
+        );
+        const point = orbitPoint(
+          item,
+          eccentricAnomaly,
+          geometry.radii[index],
+          geometry,
+          centerX,
+          centerY,
+        );
         const nodeGapX = compact
           ? Math.min(width * 0.33, 128) + 24
           : Math.min(width * 0.24, 290) + 54;
@@ -238,13 +360,35 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
     };
 
     resize();
+    fetch("/hipparcos-bright-stars.tsv", {
+      signal: catalogRequest.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load the star catalog");
+        return response.text();
+      })
+      .then((source) => {
+        if (disposed) return;
+        catalogStars = parseHipparcosCatalog(source);
+        catalogReady = true;
+        scheduleSkyUpdate();
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.warn("The Hipparcos star layer could not be loaded.", error);
+        catalogReady = true;
+        scheduleSkyUpdate();
+      });
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", handlePointer);
     window.addEventListener("blur", resetPointer);
     if (!reduceMotion) frame = window.requestAnimationFrame(draw);
 
     return () => {
+      disposed = true;
+      catalogRequest.abort();
       window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(skyFrame);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", handlePointer);
       window.removeEventListener("blur", resetPointer);
@@ -264,7 +408,9 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
           type="button"
           onClick={() => onSelect(item.id)}
           aria-pressed={activePanel === item.id}
-          aria-label={item.label}
+          aria-label={`${item.label} — ${item.body}`}
+          title={`${item.body} · ${item.label}`}
+          style={{ "--moon-color": item.color } as CSSProperties}
         >
           <span className="orbit-node__dot" aria-hidden="true" />
           <span className="orbit-node__label" aria-hidden="true">

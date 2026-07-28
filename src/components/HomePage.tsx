@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { projects } from "../data/profile";
-import { OrbitPanel, OrbitalField } from "./OrbitalField";
+import {
+  orbitBodyByPanel,
+  OrbitPanel,
+  OrbitalField,
+} from "./OrbitalField";
 
 type HomePageProps = {
   initialPanel?: OrbitPanel | null;
@@ -51,7 +55,9 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
 
             {activePanel === "projects" ? (
               <div className="orbit-panel__content">
-                <p className="orbit-panel__label">Projects</p>
+                <p className="orbit-panel__label">
+                  Projects · {orbitBodyByPanel.projects}
+                </p>
                 <div className="project-mini-list">
                   {projects.map((project) => (
                     <article key={project.name} className="project-mini">
@@ -76,7 +82,9 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
 
             {activePanel === "writing" ? (
               <div className="orbit-panel__content">
-                <p className="orbit-panel__label">Writing</p>
+                <p className="orbit-panel__label">
+                  Writing · {orbitBodyByPanel.writing}
+                </p>
                 <a className="blog-mini" href="/blog/parallel-betting">
                   <span>July 2026</span>
                   <h2>
@@ -90,7 +98,9 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
 
             {activePanel === "contact" ? (
               <div className="orbit-panel__content">
-                <p className="orbit-panel__label">Contact</p>
+                <p className="orbit-panel__label">
+                  Contact · {orbitBodyByPanel.contact}
+                </p>
                 <div className="contact-mini">
                   <a href="mailto:trentconley@gmail.com">
                     trentconley@gmail.com
@@ -108,6 +118,7 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
           </>
         ) : null}
       </section>
+
     </div>
   );
 }

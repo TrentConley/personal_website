@@ -130,14 +130,14 @@ img {
 
 .orbit-identity::before {
   position: absolute;
-  inset: -1rem -3rem;
+  inset: 0 -2rem;
   z-index: -1;
   background: radial-gradient(
     ellipse at center,
-    rgba(8, 7, 6, 1) 0%,
-    rgba(8, 7, 6, 0.98) 46%,
-    rgba(8, 7, 6, 0.72) 64%,
-    rgba(8, 7, 6, 0) 79%
+    rgba(8, 7, 6, 0.76) 0%,
+    rgba(8, 7, 6, 0.62) 42%,
+    rgba(8, 7, 6, 0.24) 65%,
+    rgba(8, 7, 6, 0) 82%
   );
   content: "";
 }
@@ -149,6 +149,7 @@ img {
   font-weight: 460;
   letter-spacing: -0.07em;
   line-height: 0.95;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.78);
 }
 
 .orbit-identity p {
@@ -181,12 +182,12 @@ img {
 }
 
 .orbit-node__dot {
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--rust);
-  box-shadow: 0 0 12px rgba(196, 95, 61, 0.65);
+  background: var(--moon-color, var(--rust));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--moon-color, var(--rust)) 68%, transparent);
 }
 
 .orbit-node__short {
@@ -668,6 +669,11 @@ img {
     height: 44px;
     padding: 0;
     gap: 0.25rem;
+    border-color: color-mix(
+      in srgb,
+      var(--moon-color, var(--cream)) 42%,
+      transparent
+    );
     font-size: 0.65rem;
   }
 
@@ -678,6 +684,7 @@ img {
 
   .orbit-node__short {
     display: inline;
+    color: var(--moon-color, var(--cream));
   }
 
   .project-mini h2 {
