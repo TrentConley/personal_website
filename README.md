@@ -1,13 +1,13 @@
-# Trent Conley — Terminal UI
+# Trent Conley — Personal Site
 
-A command-line inspired personal site for Trent Conley, built with React and Vite. The interface mimics a modern terminal session: each section appears as a command prompt with animated typing, sleek transitions, and high-contrast styling tuned for speed.
+A single-screen personal site built with React and Vite. Projects, writing, and contact details live inside an interactive orbital field.
 
 ## Stack
 
 - React 18 + TypeScript
 - Vite build tooling
-- Framer Motion for motion primitives
-- Custom CSS (no Tailwind/utility frameworks)
+- Canvas orbital animation
+- Custom CSS
 
 ## Getting Started
 
@@ -27,22 +27,17 @@ npm run preview
 
 `npm run build` produces the optimised bundle in `dist/`, and `npm run preview` serves it locally to verify the production output.
 
-## Keyboard Shortcuts
-
-- `Enter` — advance to the next command/output block.
-
-The featured essay is also available directly at
-`/blog/parallel-betting`.
+The featured essay is available directly at `/blog/parallel-betting`.
 
 ## Project Structure
 
 ```
 src/
-  App.tsx              // Command flow orchestration
+  App.tsx              // Lightweight path routing
   main.tsx             // React entry point
-  style.css            // Global CLI styling
-  components/          // UI primitives, terminal outputs, and article view
-  data/profile.ts      // Profile, project, and book metadata
+  style.css            // Global site styling
+  components/          // Pages, orbital canvas, and shared navigation
+  data/profile.ts      // Selected project metadata
 public/                // Static assets (images, article PDF, favicon)
 ```
 

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 const mediumUrl =
   "https://medium.com/@trentconley/would-you-risk-everything-on-a-coin-flip-if-the-math-told-you-to-89aa39a5a6bc";
 const sourceUrl = "https://github.com/TrentConley/parallel-betting";
@@ -18,35 +20,23 @@ function Equation({ src, alt, width, height }: EquationProps) {
 }
 
 export function ArticlePage() {
+  useEffect(() => {
+    document.title =
+      "Would you risk everything on a coin flip if the math told you to? | Trent Conley";
+  }, []);
+
   return (
     <div className="article-view">
       <nav className="article-nav" aria-label="Article navigation">
-        <a href="/" className="article-nav__home">
-          <span aria-hidden="true">←</span> trent@console
+        <a href="/" className="article-nav__mark" aria-label="Return to orbit">
+          TC
         </a>
-        <div className="article-nav__links">
-          <a href={sourceUrl} target="_blank" rel="noreferrer">
-            source
-          </a>
-          <a
-            href="/blog/parallel-betting/parallel-betting.pdf"
-            target="_blank"
-            rel="noreferrer"
-          >
-            pdf
-          </a>
-        </div>
+        <a href="/writing">Return to orbit</a>
       </nav>
 
       <main className="article-shell">
         <article className="article-paper">
           <header className="article-header">
-            <p className="article-command">
-              <span>trent@console:~/writing$</span> cat parallel-betting.md
-            </p>
-            <p className="article-kicker">
-              essay // probability + decision-making
-            </p>
             <h1>
               Would you risk everything on a coin flip if the math told you to?
             </h1>
@@ -57,9 +47,9 @@ export function ArticlePage() {
             </p>
             <div className="article-byline">
               <span>Trent Conley</span>
-              <span aria-hidden="true">//</span>
+              <span aria-hidden="true">·</span>
               <time dateTime="2026-07-26">July 26, 2026</time>
-              <span aria-hidden="true">//</span>
+              <span aria-hidden="true">·</span>
               <span>8 min read</span>
             </div>
           </header>
@@ -109,12 +99,9 @@ export function ArticlePage() {
               bet? What is the probability of profiting?
             </p>
 
-            <aside className="article-stat">
-              <strong>1 in 2¹⁰⁰</strong>
-              <span>
-                your chance of profiting if you bet everything every round
-              </span>
-            </aside>
+            <p>
+              <strong>That gives you a 1 in 2¹⁰⁰ chance of profiting.</strong>
+            </p>
 
             <p>
               If you bet everything, you need to get heads at every turn to
@@ -181,10 +168,9 @@ export function ArticlePage() {
               stack for each of the 100 rounds.
             </p>
 
-            <aside className="article-answer">
-              <span>single-game answer</span>
-              <strong>Bet 25% each round.</strong>
-            </aside>
+            <p>
+              <strong>The single-game answer: bet 25% each round.</strong>
+            </p>
 
             <h2>Now play the games in parallel</h2>
             <p>
@@ -249,13 +235,14 @@ export function ArticlePage() {
               the majority of returns from the S&amp;P 500 came from just seven
               companies between 2023 and 2025.
             </p>
-            <p className="article-closing">
+            <p>
               This is how capitalism, evolution, and nature work, through
               stochastic betting. The only question you need to ask yourself:
               <strong> how many games are you playing?</strong>
             </p>
 
-            <aside className="article-note">
+            <section className="article-notes">
+              <h2>Notes</h2>
               <p>
                 All of my code is open sourced on GitHub. I&apos;m a bit old school
                 when writing, so these are all my words. All the code was
@@ -272,14 +259,14 @@ export function ArticlePage() {
                 are not independent. I&apos;d challenge the reader to think about
                 how this affects your strategy.
               </p>
-            </aside>
+            </section>
 
             <footer className="article-footer">
               <a href={sourceUrl} target="_blank" rel="noreferrer">
-                [explore the code ↗]
+                Explore the code ↗
               </a>
               <a href={mediumUrl} target="_blank" rel="noreferrer">
-                [originally published on Medium ↗]
+                Originally published on Medium ↗
               </a>
             </footer>
           </div>
