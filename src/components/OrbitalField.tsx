@@ -154,7 +154,10 @@ export const orbitBodyByPanel: Record<OrbitPanel, OrbitBody["body"]> = {
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 // Begin at a valid, well-separated point in the measured orbital model.
 const simulationStartDays = 18.141;
-const simulationDaysPerSecond = 0.012;
+// Time is accelerated uniformly, preserving the moons' real period ratios.
+// Io completes a lap in roughly one minute, while the outer moons move more
+// slowly, which keeps the controls alive without making them hard to follow.
+const simulationDaysPerSecond = 0.03;
 
 function solveEccentricAnomaly(meanAnomaly: number, eccentricity: number) {
   const tau = Math.PI * 2;
@@ -400,9 +403,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
 
       const simulatedDays =
         simulationStartDays +
-        (reduceMotion || compact
-          ? 0
-          : (timestamp / 1000) * simulationDaysPerSecond);
+        (reduceMotion ? 0 : (timestamp / 1000) * simulationDaysPerSecond);
 
       orbitItems.forEach((item, index) => {
         const node = nodeRefs.current[index];
