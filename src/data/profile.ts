@@ -9,6 +9,12 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    name: "Factorio Factory Foundry",
+    summary:
+      "A recursively planned, throughput-aware vanilla factory blueprint generator tested inside Factorio.",
+    links: [{ label: "try it", url: "/projects/factorio-blueprints" }],
+  },
+  {
     name: "Eye-Controlled Drone",
     summary:
       "A computer-vision interface that maps eye movement and head tilt to four degrees of drone flight control.",

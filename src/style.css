@@ -1175,3 +1175,578 @@ img {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Factorio factory generator */
+.factorio-page {
+  --factory-bg: #101411;
+  --factory-panel: #171d19;
+  --factory-panel-high: #1d251f;
+  --factory-line: rgba(220, 226, 209, 0.14);
+  --factory-text: #edf0e8;
+  --factory-muted: #98a098;
+  --factory-green: #82d29c;
+  --factory-amber: #e6ad58;
+  min-height: 100vh;
+  color: var(--factory-text);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    radial-gradient(circle at 78% 8%, rgba(108, 165, 112, 0.13), transparent 32rem),
+    var(--factory-bg);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+.factorio-page button,
+.factorio-page select,
+.factorio-page input,
+.factorio-page textarea {
+  font: inherit;
+}
+
+.factorio-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  width: min(calc(100% - 3rem), 1380px);
+  min-height: 76px;
+  margin: 0 auto;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid var(--factory-line);
+}
+
+.factorio-nav__home {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(237, 240, 232, 0.38);
+  border-radius: 50%;
+  color: var(--factory-text);
+  font-size: 0.7rem;
+  font-weight: 750;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.factorio-nav__home:hover,
+.factorio-nav__home:focus-visible {
+  color: var(--factory-bg);
+  background: var(--factory-text);
+  outline: none;
+}
+
+.factorio-nav > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.factorio-nav strong {
+  font-size: 0.93rem;
+  letter-spacing: -0.02em;
+}
+
+.factorio-nav > div span {
+  margin-top: 2px;
+  color: var(--factory-muted);
+  font-size: 0.61rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.factorio-status {
+  display: inline-flex;
+  padding: 0.48rem 0.7rem;
+  align-items: center;
+  gap: 0.48rem;
+  border: 1px solid var(--factory-line);
+  border-radius: 999px;
+  color: #b8c0b8;
+  background: rgba(12, 16, 13, 0.6);
+  font: 0.63rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--factory-green);
+  box-shadow: 0 0 10px var(--factory-green);
+}
+
+.factorio-main {
+  width: min(calc(100% - 3rem), 1380px);
+  max-width: none;
+  margin: 0 auto;
+  padding: 0 0 5rem;
+}
+
+.factorio-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  padding: clamp(4.5rem, 9vw, 8rem) 0 clamp(3rem, 6vw, 5rem);
+  align-items: end;
+  column-gap: clamp(2rem, 6vw, 6rem);
+}
+
+.factorio-hero > p {
+  grid-column: 1 / -1;
+  margin: 0 0 1rem;
+  color: var(--factory-green);
+  font: 0.65rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.factorio-hero h1 {
+  margin: 0;
+  color: #f4f2e9;
+  font-size: clamp(3rem, 6.3vw, 6rem);
+  font-weight: 560;
+  letter-spacing: -0.065em;
+  line-height: 0.94;
+}
+
+.factorio-hero__copy {
+  padding-bottom: 0.3rem;
+}
+
+.factorio-hero__copy p {
+  margin: 0;
+  color: #abb2aa;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.factorio-hero__copy span {
+  display: block;
+  margin-top: 1.25rem;
+  color: #707970;
+  font: 0.59rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.factorio-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(520px, 1.28fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.factorio-config,
+.factorio-result {
+  border: 1px solid var(--factory-line);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(28, 36, 30, 0.96), rgba(20, 26, 22, 0.97));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.24);
+}
+
+.factorio-config {
+  display: grid;
+  padding: 1.5rem;
+  gap: 1.15rem;
+}
+
+.factorio-card-heading {
+  display: flex;
+  padding-bottom: 1.25rem;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--factory-line);
+}
+
+.factorio-card-heading > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(130, 210, 156, 0.25);
+  border-radius: 9px;
+  color: var(--factory-green);
+  background: rgba(130, 210, 156, 0.06);
+  font: 0.62rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-card-heading small,
+.factorio-result__heading small {
+  display: block;
+  color: var(--factory-muted);
+  font: 0.57rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.factorio-card-heading h2,
+.factorio-result__heading h2 {
+  margin: 0.2rem 0 0;
+  color: var(--factory-text);
+  font-size: 1.03rem;
+  letter-spacing: -0.02em;
+}
+
+.factorio-config label {
+  display: grid;
+  gap: 0.48rem;
+  color: #d1d7d0;
+  font-size: 0.69rem;
+  font-weight: 700;
+}
+
+.factorio-config select,
+.factorio-config input,
+.factorio-config textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.68rem 0.75rem;
+  border: 1px solid rgba(220, 226, 209, 0.18);
+  border-radius: 8px;
+  color: var(--factory-text);
+  background: #101512;
+  outline: none;
+}
+
+.factorio-config select {
+  appearance: auto;
+}
+
+.factorio-config textarea {
+  min-height: 104px;
+  resize: vertical;
+  font: 0.67rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-config select:focus,
+.factorio-config input:focus,
+.factorio-config textarea:focus {
+  border-color: rgba(130, 210, 156, 0.65);
+  box-shadow: 0 0 0 3px rgba(130, 210, 156, 0.07);
+}
+
+.factorio-number {
+  position: relative;
+}
+
+.factorio-number input {
+  padding-right: 7.2rem;
+}
+
+.factorio-number span {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.75rem;
+  color: #788078;
+  font: 0.61rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-presets {
+  display: flex;
+  margin-top: -0.7rem;
+  gap: 0.45rem;
+}
+
+.factorio-presets button {
+  padding: 0.43rem 0.62rem;
+  border: 1px solid rgba(130, 210, 156, 0.2);
+  border-radius: 7px;
+  color: #a7cbb2;
+  background: rgba(130, 210, 156, 0.05);
+  font-size: 0.61rem;
+}
+
+.factorio-presets button:hover,
+.factorio-presets button:focus-visible {
+  border-color: rgba(130, 210, 156, 0.55);
+  outline: none;
+}
+
+.factorio-help {
+  margin: -0.55rem 0 0;
+  color: #7f887f;
+  font-size: 0.63rem;
+  line-height: 1.55;
+}
+
+.factorio-help code {
+  padding: 0.08rem 0.22rem;
+  border-radius: 3px;
+  color: #b9d9c2;
+  background: rgba(130, 210, 156, 0.08);
+}
+
+.factorio-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.factorio-result {
+  min-width: 0;
+  min-height: 640px;
+  padding: clamp(1.35rem, 3vw, 2rem);
+}
+
+.factorio-result__heading {
+  display: flex;
+  padding-bottom: 1.3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--factory-line);
+}
+
+.factorio-result__heading h2 {
+  font-size: 1.35rem;
+}
+
+.factorio-valid {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(130, 210, 156, 0.25);
+  border-radius: 999px;
+  color: var(--factory-green);
+  background: rgba(130, 210, 156, 0.07);
+  font: 0.6rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin: 1.25rem 0;
+}
+
+.factorio-metrics > div {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--factory-line);
+  border-radius: 10px;
+  background: rgba(8, 12, 9, 0.24);
+}
+
+.factorio-metrics small {
+  display: block;
+  overflow: hidden;
+  color: #8f988f;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.factorio-metrics strong {
+  display: block;
+  margin-top: 0.42rem;
+  color: #f1f0e8;
+  font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+  font-weight: 560;
+  letter-spacing: -0.04em;
+}
+
+.factorio-metrics strong span {
+  margin-left: 0.14rem;
+  color: #858e85;
+  font-size: 0.65rem;
+  letter-spacing: 0;
+}
+
+.factorio-metrics p {
+  margin: 0.35rem 0 0;
+  overflow: hidden;
+  color: #777f78;
+  font-size: 0.59rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-warning,
+.factorio-error {
+  padding: 0.75rem;
+  border: 1px solid rgba(230, 173, 88, 0.22);
+  border-radius: 8px;
+  color: #dbbb83;
+  background: rgba(230, 173, 88, 0.07);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.factorio-error {
+  display: flex;
+  gap: 0.75rem;
+  color: #e4aaa3;
+  border-color: rgba(225, 112, 98, 0.25);
+  background: rgba(225, 112, 98, 0.07);
+}
+
+.factorio-error > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.factorio-error p {
+  margin: 0.3rem 0 0;
+}
+
+.factorio-rates h3 {
+  margin: 1.5rem 0 0.65rem;
+  color: #d4d9d3;
+  font-size: 0.72rem;
+  letter-spacing: 0;
+}
+
+.factorio-table-scroll {
+  overflow-x: auto;
+}
+
+.factorio-rates table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.68rem;
+}
+
+.factorio-rates th,
+.factorio-rates td {
+  padding: 0.65rem 0.55rem;
+  border-bottom: 1px solid var(--factory-line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.factorio-rates th:first-child,
+.factorio-rates td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.factorio-rates th {
+  color: #707970;
+  font-size: 0.54rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.factorio-rates td {
+  color: #b7beb7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-rates td:first-child {
+  color: #dce1da;
+  font-family: inherit;
+}
+
+.factorio-rates td small {
+  display: block;
+  margin-top: 0.1rem;
+  color: #697269;
+  font: 0.52rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+}
+
+.factorio-actions {
+  display: flex;
+  margin-top: 1.25rem;
+  gap: 0.55rem;
+}
+
+.factorio-actions button {
+  padding: 0.72rem 0.92rem;
+  border: 1px solid rgba(220, 226, 209, 0.2);
+  border-radius: 8px;
+  color: #dce1da;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.factorio-actions button:hover,
+.factorio-actions button:focus-visible {
+  border-color: rgba(220, 226, 209, 0.5);
+  outline: none;
+}
+
+.factorio-actions .factorio-actions__primary {
+  border-color: #7bc994;
+  color: #101611;
+  background: #7bc994;
+}
+
+.factorio-blueprint {
+  width: 100%;
+  height: 70px;
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  resize: none;
+  border: 1px solid var(--factory-line);
+  border-radius: 8px;
+  color: #687168;
+  background: rgba(7, 10, 8, 0.42);
+  font: 0.53rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+}
+
+.factorio-blueprint:focus {
+  border-color: rgba(130, 210, 156, 0.4);
+}
+
+.factorio-proof {
+  margin: 0.8rem 0 0;
+  color: #737c74;
+  font-size: 0.59rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 960px) {
+  .factorio-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .factorio-hero__copy {
+    max-width: 680px;
+    margin-top: 1.75rem;
+  }
+
+  .factorio-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .factorio-result {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 580px) {
+  .factorio-nav,
+  .factorio-main {
+    width: calc(100% - 2rem);
+  }
+
+  .factorio-status {
+    display: none;
+  }
+
+  .factorio-hero {
+    padding-top: 4rem;
+  }
+
+  .factorio-hero h1 {
+    font-size: clamp(2.65rem, 13vw, 4rem);
+  }
+
+  .factorio-field-grid,
+  .factorio-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .factorio-result__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .factorio-actions {
+    flex-direction: column;
+  }
+}

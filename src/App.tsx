@@ -1,4 +1,5 @@
 import { ArticlePage } from "./components/ArticlePage";
+import { FactorioBlueprintPage } from "./components/FactorioBlueprintPage";
 import { HomePage } from "./components/HomePage";
 
 export default function App() {
@@ -6,6 +7,10 @@ export default function App() {
 
   if (path === "/blog/parallel-betting") {
     return <ArticlePage />;
+  }
+
+  if (path === "/projects/factorio-blueprints") {
+    return <FactorioBlueprintPage />;
   }
 
   if (path === "/writing" || path === "/blog") {
