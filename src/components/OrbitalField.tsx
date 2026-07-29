@@ -212,7 +212,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       const maximumAxis = orbitItems[orbitItems.length - 1].semimajorAxisKm;
       const logRange = Math.log(maximumAxis / minimumAxis);
       const projectedOuterRadius = compact
-        ? Math.min(outerRadius * 0.86, height * 0.25)
+        ? Math.min(outerRadius * 0.5, height * 0.11)
         : Math.min(outerRadius * 0.55, height * 0.36, 315);
 
       return {
@@ -255,7 +255,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const minimumRenderRatio = rect.width < 640 ? 2 : 1;
+      const minimumRenderRatio = rect.width < 640 ? 3 : 1;
       const dpr = Math.min(
         Math.max(window.devicePixelRatio || 1, minimumRenderRatio),
         3,
@@ -328,8 +328,18 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
         ctx.drawImage(renderedSky.stars, 0, 0, width, height);
       }
 
+      if (compact) {
+        const skyFade = ctx.createLinearGradient(0, height * 0.24, 0, height);
+        skyFade.addColorStop(0, "rgba(5, 5, 6, 0)");
+        skyFade.addColorStop(0.34, "rgba(5, 5, 6, 0.16)");
+        skyFade.addColorStop(0.58, "rgba(5, 5, 6, 0.72)");
+        skyFade.addColorStop(1, "rgba(5, 5, 6, 0.96)");
+        ctx.fillStyle = skyFade;
+        ctx.fillRect(0, 0, width, height);
+      }
+
       const centerX = width / 2;
-      const centerY = height * (compact ? 0.62 : 0.5);
+      const centerY = height * (compact ? 0.7 : 0.5);
       const exclusionX = compact
         ? Math.min(width * 0.38, 150)
         : Math.min(width * 0.3, 330);
@@ -351,9 +361,10 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
             geometry,
           );
           const insideNameGap =
+            !compact &&
             Math.pow(point.x / exclusionX, 4) +
               Math.pow(point.y / exclusionY, 4) <
-            1;
+              1;
 
           if (insideNameGap) {
             drawing = false;
@@ -378,6 +389,13 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
       ctx.beginPath();
       ctx.arc(0, 0, 82, 0, Math.PI * 2);
       ctx.fill();
+
+      if (compact) {
+        ctx.fillStyle = "rgba(244, 229, 199, 0.88)";
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
 
       const simulatedDays =
@@ -396,7 +414,7 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
           meanAnomaly,
           item.eccentricity,
         );
-        let point = orbitPoint(
+        const point = orbitPoint(
           item,
           eccentricAnomaly,
           geometry.radii[index],
@@ -404,42 +422,13 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
           centerX,
           centerY,
         );
-        const nodeGapX = compact
-          ? Math.min(width * 0.33, 128) + 24
-          : Math.min(width * 0.24, 290) + 54;
-        const nodeGapY = compact ? 74 : 78;
-        let hiddenBehindName =
+        const nodeGapX = Math.min(width * 0.24, 290) + 54;
+        const nodeGapY = 78;
+        const hiddenBehindName =
+          !compact &&
           Math.pow((point.x - centerX) / nodeGapX, 4) +
             Math.pow((point.y - centerY) / nodeGapY, 4) <
-          1;
-
-        if (compact && hiddenBehindName) {
-          const offsetX = point.x - centerX;
-          const offsetY = point.y - centerY;
-          let separation = 1;
-
-          for (let step = 0; step < 10; step += 1) {
-            const projectedX = offsetX * separation;
-            const projectedY = offsetY * separation;
-            const gapPosition =
-              Math.pow(projectedX / nodeGapX, 4) +
-              Math.pow(projectedY / nodeGapY, 4);
-            if (gapPosition >= 1.18) break;
-            separation *= 1.09;
-          }
-
-          point = {
-            x: Math.min(
-              Math.max(centerX + offsetX * separation, 42),
-              width - 42,
-            ),
-            y: Math.min(
-              Math.max(centerY + offsetY * separation, 92),
-              height - 32,
-            ),
-          };
-          hiddenBehindName = false;
-        }
+            1;
 
         node.style.left = `${point.x}px`;
         node.style.top = `${point.y}px`;

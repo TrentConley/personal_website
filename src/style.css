@@ -848,9 +848,13 @@ img {
 
 @media (max-width: 560px) {
   .orbit-identity {
-    top: 62%;
+    top: 45%;
     width: calc(100% - 2.5rem);
     padding: 2rem 0;
+  }
+
+  .orbit-identity::before {
+    inset: -1rem -1.5rem;
   }
 
   .orbit-identity h1 {
@@ -894,6 +898,10 @@ img {
 
   .star-discovery::after {
     inset: 11px;
+  }
+
+  .sky-credit {
+    display: none;
   }
 
   .orbit-panel {

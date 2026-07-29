@@ -152,7 +152,7 @@ function buildCamera(
   );
   const horizontalFieldOfView = radians(options.compact ? 112 : 112);
   const tangentX = Math.tan(horizontalFieldOfView / 2);
-  const displayRoll = radians(options.compact ? -30 : -145);
+  const displayRoll = radians(options.compact ? 30 : -145);
   const right = normalize(
     combine(
       unrolledRight,
@@ -179,8 +179,8 @@ function buildCamera(
     // Portrait composition uses an accurate off-axis projection so the
     // Galactic plane becomes an edge element instead of running through the
     // interface. Celestial labels use the same offset below.
-    offsetX: options.compact ? 0.52 : 0,
-    offsetY: options.compact ? 0.02 : 0,
+    offsetX: 0,
+    offsetY: options.compact ? 0.45 : 0,
   };
 }
 
@@ -284,14 +284,14 @@ function sampleSource(
 }
 
 function starColor(colorIndex: number | null): [number, number, number] {
-  if (colorIndex === null) return [244, 236, 222];
+  if (colorIndex === null) return [247, 243, 235];
 
   const anchors: Array<[number, [number, number, number]]> = [
-    [-0.35, [148, 190, 255]],
-    [0.15, [235, 238, 249]],
-    [0.75, [255, 218, 156]],
-    [1.55, [255, 151, 69]],
-    [2.1, [255, 103, 58]],
+    [-0.35, [194, 216, 255]],
+    [0.15, [244, 244, 248]],
+    [0.75, [255, 230, 190]],
+    [1.55, [255, 190, 135]],
+    [2.1, [255, 155, 115]],
   ];
   const value = clamp(colorIndex, anchors[0][0], anchors[anchors.length - 1][0]);
 
@@ -325,7 +325,7 @@ function drawCatalogStars(
     // On a phone, desktop catalog density collapses thousands of separate
     // points into noise. Preserve only the stars that would actually read as
     // distinct naked-eye objects at this scale.
-    if (compact && star.magnitude > 5) continue;
+    if (compact && star.magnitude > 5.6) continue;
 
     const direction = equatorialVector(star.rightAscension, star.declination);
     const forward = dot(direction, camera.center);
@@ -340,6 +340,18 @@ function drawCatalogStars(
     const x = ((normalizedX + 1) / 2) * width;
     const y = ((normalizedY + 1) / 2) * height;
     const vignette = opticalVignette(normalizedX, normalizedY);
+
+    if (compact && star.magnitude > 4.6) {
+      const faintVisibility = clamp((5.6 - star.magnitude) / 1, 0, 1);
+      const faintRadius = (0.3 + faintVisibility * 0.08) * renderScale;
+      const faintAlpha = (0.2 + faintVisibility * 0.25) * vignette;
+      const [red, green, blue] = starColor(star.colorIndex);
+      context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${faintAlpha})`;
+      context.beginPath();
+      context.arc(x, y, faintRadius, 0, Math.PI * 2);
+      context.fill();
+      continue;
+    }
 
     if (star.magnitude > 6.5) {
       const visibility = clamp((8.5 - star.magnitude) / 2, 0, 1);
@@ -360,9 +372,9 @@ function drawCatalogStars(
 
     const brightness = clamp((6.5 - star.magnitude) / 7.96, 0, 1);
     const radius = Math.max(
-      0.74,
-      (0.44 + brightness ** 1.85 * 2.02) * renderScale,
-    ) * 1.04;
+      0.82,
+      (0.58 + brightness ** 1.85 * 2.28) * renderScale,
+    );
     const alpha = clamp(
       (0.88 + brightness * 0.12) * vignette * 1.18,
       0,
@@ -370,34 +382,10 @@ function drawCatalogStars(
     );
     const [red, green, blue] = starColor(star.colorIndex);
 
-    // A minute radial color split gives the brighter catalog stars the same
-    // optical character as a wide-open camera lens without inventing stars.
-    if (star.magnitude < 3.8) {
-      const radialX = x / width - 0.5;
-      const radialY = y / height - 0.5;
-      const radialLength = Math.hypot(radialX, radialY) || 1;
-      const fringeOffset =
-        (0.15 + clamp((3.8 - star.magnitude) / 4.8, 0, 1) * 0.24) *
-        renderScale;
-      const fringeX = (radialX / radialLength) * fringeOffset;
-      const fringeY = (radialY / radialLength) * fringeOffset;
-      const fringeRadius = Math.max(0.42 * renderScale, radius * 0.58);
-
-      context.fillStyle = `rgba(92, 154, 255, ${alpha * 0.26})`;
-      context.beginPath();
-      context.arc(x - fringeX, y - fringeY, fringeRadius, 0, Math.PI * 2);
-      context.fill();
-
-      context.fillStyle = `rgba(255, 112, 67, ${alpha * 0.23})`;
-      context.beginPath();
-      context.arc(x + fringeX, y + fringeY, fringeRadius, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    if (star.magnitude < 0.7) {
-      const glowRadius = radius * 2.8;
+    if (star.magnitude < 2.8) {
+      const glowRadius = radius * (star.magnitude < 0.7 ? 2.8 : 1.9);
       const glow = context.createRadialGradient(x, y, 0, x, y, glowRadius);
-      glow.addColorStop(0, `rgba(${red}, ${green}, ${blue}, ${alpha * 0.22})`);
+      glow.addColorStop(0, `rgba(${red}, ${green}, ${blue}, ${alpha * 0.18})`);
       glow.addColorStop(1, `rgba(${red}, ${green}, ${blue}, 0)`);
       context.fillStyle = glow;
       context.beginPath();
@@ -405,10 +393,21 @@ function drawCatalogStars(
       context.fill();
     }
 
-    context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha * 0.88})`;
     context.beginPath();
     context.arc(x, y, radius, 0, Math.PI * 2);
     context.fill();
+
+    // A very small neutral core reads as a focused point source after the
+    // high-density backing canvas is reduced to CSS pixels. Color remains in
+    // the surrounding stellar disc instead of appearing as a digital fringe.
+    if (star.magnitude < 4.4) {
+      const coreRadius = Math.max(0.32 * renderScale, radius * 0.32);
+      context.fillStyle = `rgba(255, 253, 248, ${alpha * 0.92})`;
+      context.beginPath();
+      context.arc(x, y, coreRadius, 0, Math.PI * 2);
+      context.fill();
+    }
   }
 
   context.restore();
@@ -475,10 +474,11 @@ export function renderMilkyWay(
 
   // Preserve a genuinely high-density backing surface on Retina laptops while
   // keeping a bounded memory footprint on very large external displays.
+  const outputHeightCap = options.compact ? 3000 : 2400;
   const outputScale = Math.min(
     options.pixelRatio,
     3840 / options.width,
-    2400 / options.height,
+    outputHeightCap / options.height,
   );
   const outputWidth = Math.max(1, Math.round(options.width * outputScale));
   const outputHeight = Math.max(1, Math.round(options.height * outputScale));
@@ -491,10 +491,12 @@ export function renderMilkyWay(
   // The photographic layer used to render at CSS-pixel resolution and then be
   // enlarged into the Retina canvas. Reproject it above CSS resolution so the
   // dust lanes and integrated star clouds retain their fine structure.
+  const diffuseWidthCap = options.compact ? 3600 : 2560;
+  const diffuseHeightCap = options.compact ? 3000 : 2200;
   const diffuseScale = Math.min(
     outputScale,
-    2560 / options.width,
-    2200 / options.height,
+    diffuseWidthCap / options.width,
+    diffuseHeightCap / options.height,
   );
   const diffuseWidth = Math.max(1, Math.round(options.width * diffuseScale));
   const diffuseHeight = Math.max(1, Math.round(options.height * diffuseScale));
@@ -521,38 +523,43 @@ export function renderMilkyWay(
         latitude,
       );
       const luminance =
-        (sourceRed * 0.22 + sourceGreen * 0.68 + sourceBlue * 0.1) / 255;
+        (sourceRed * 0.24 + sourceGreen * 0.64 + sourceBlue * 0.12) / 255;
+      // The Gaia panorama contains the correct structure but its display
+      // encoding is much flatter than a long-exposure photograph. A gentler
+      // toe reveals the dim stellar clouds and dust surrounding the bright
+      // Galactic plane instead of reducing them to a narrow gray streak.
       const signal = Math.pow(
-        clamp((luminance - 0.1) / 0.9, 0, 1),
-        2.55,
+        clamp((luminance - 0.025) / 0.975, 0, 1),
+        1.6,
       );
-      const highlight = signal ** 1.5;
+      const highlight = signal ** 1.7;
       const midtone = signal * (1 - signal) * 4;
-      const redChroma = sourceRed / 255 - luminance;
-      const greenChroma = sourceGreen / 255 - luminance;
-      const blueChroma = sourceBlue / 255 - luminance;
+      const warmth = clamp((sourceRed - sourceBlue) / 255, -0.2, 0.32);
+      const coolness = Math.max(0, -warmth);
       const density = signal * 136 + highlight * 42 + midtone * 5;
-      const colorStrength = signal * 340;
       const vignette = opticalVignette(screenX, screenY);
       const offset = (y * diffuseWidth + x) * 4;
 
       pixels[offset] = clamp(
-        (1 + density + highlight * 20 + redChroma * colorStrength) * vignette,
+        (12 + density * 1.27 + highlight * 7 + warmth * signal * 78) *
+          vignette,
         0,
         255,
       );
       pixels[offset + 1] = clamp(
-        (
-          1 +
-          density * 0.985 +
-          highlight * 7 +
-          greenChroma * colorStrength * 0.62
-        ) * vignette,
+        (7.5 + density * 0.88 + highlight * 24 + warmth * signal * 10) *
+          vignette,
         0,
         255,
       );
       pixels[offset + 2] = clamp(
-        (1.6 + density + blueChroma * colorStrength * 1.08) *
+        (
+          6 +
+          density * 0.7 +
+          highlight * 44 -
+          warmth * signal * 34 +
+          coolness * signal * 74
+        ) *
           vignette,
         0,
         255,
