@@ -10,6 +10,7 @@ import {
 } from "../factorio/chain";
 import { decodeBlueprint } from "../factorio/core/codec";
 import { BELT_TIERS, SIDES, type BeltTier, type Side } from "../factorio/core/types";
+import { FactorioBlueprintPreview } from "./FactorioBlueprintPreview";
 
 const FEATURED_TARGETS = [
   "electronic-circuit",
@@ -384,6 +385,8 @@ export function FactorioBlueprintPage() {
                 {generated.result.warnings.map((warning) => (
                   <div className="factorio-warning" key={warning}>△ {warning}</div>
                 ))}
+
+                <FactorioBlueprintPreview blueprint={generated.result} />
 
                 <div className="factorio-rates">
                   <h3>External input rates</h3>
