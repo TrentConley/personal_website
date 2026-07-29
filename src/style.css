@@ -1437,9 +1437,307 @@ img {
   font: 0.61rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.factorio-material-icon {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  overflow: hidden;
+  border: 1px solid rgba(220, 226, 209, 0.12);
+  border-radius: 7px;
+  background: radial-gradient(circle at 45% 38%, rgba(255, 255, 255, 0.1), rgba(5, 8, 6, 0.32));
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.18);
+}
+
+.factorio-material-icon > img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  height: 100%;
+  image-rendering: auto;
+}
+
+.factorio-material-icon--large {
+  width: 46px;
+  height: 46px;
+  flex-basis: 46px;
+  border-radius: 10px;
+}
+
+.factorio-material-icon__badge {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  z-index: 1;
+  display: block;
+  width: 13px;
+  height: 13px;
+  overflow: hidden;
+  border: 1px solid rgba(235, 239, 229, 0.6);
+  border-radius: 50%;
+  background: #111713;
+}
+
+.factorio-material-icon__badge img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  height: 100%;
+}
+
+.factorio-recipe-card,
+.factorio-input-builder {
+  padding: 0.85rem;
+  border: 1px solid rgba(220, 226, 209, 0.12);
+  border-radius: 10px;
+  background: rgba(8, 12, 9, 0.24);
+}
+
+.factorio-recipe-card__output {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.factorio-recipe-card__output > div,
+.factorio-input-builder__heading > div {
+  display: grid;
+  min-width: 0;
+}
+
+.factorio-recipe-card__output small,
+.factorio-input-builder__heading small {
+  color: #747d75;
+  font: 0.52rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.factorio-recipe-card__output strong {
+  margin-top: 0.14rem;
+  overflow: hidden;
+  color: #e4e7df;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-recipe-card__output span {
+  margin-top: 0.12rem;
+  color: #79827a;
+  font-size: 0.56rem;
+}
+
+.factorio-recipe-card h3 {
+  margin: 0.85rem 0 0.45rem;
+  color: #959f96;
+  font-size: 0.59rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.factorio-recipe-ingredients,
+.factorio-selected-inputs {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 0.35rem;
+  list-style: none;
+}
+
+.factorio-recipe-ingredients li,
+.factorio-selected-inputs li {
+  display: grid;
+  grid-template-columns: 22px 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.48rem;
+}
+
+.factorio-recipe-ingredients li > span:nth-child(3),
+.factorio-selected-inputs li > span:nth-child(3) {
+  display: grid;
+  min-width: 0;
+}
+
+.factorio-recipe-ingredients li strong,
+.factorio-selected-inputs li strong {
+  overflow: hidden;
+  color: #cfd5ce;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-recipe-ingredients li small,
+.factorio-selected-inputs li small {
+  color: #6f786f;
+  font: 0.49rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+}
+
+.factorio-recipe-ingredients li > b {
+  min-width: 28px;
+  color: #9fd2ad;
+  font: 0.65rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+}
+
+.factorio-ingredient-number {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid rgba(130, 210, 156, 0.16);
+  border-radius: 50%;
+  color: #789381;
+  font: 0.52rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-input-builder {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.factorio-input-builder__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.factorio-input-builder__heading h3 {
+  margin: 0.15rem 0 0;
+  color: #e3e7df;
+  font-size: 0.78rem;
+}
+
+.factorio-input-builder__heading > span {
+  color: #819087;
+  font: 0.55rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-selected-inputs {
+  max-height: 270px;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.factorio-selected-inputs li {
+  padding: 0.32rem;
+  border: 1px solid rgba(220, 226, 209, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.factorio-selected-inputs li > button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid rgba(220, 226, 209, 0.14);
+  border-radius: 50%;
+  color: #889089;
+  background: transparent;
+  cursor: pointer;
+}
+
+.factorio-selected-inputs li > button:hover,
+.factorio-selected-inputs li > button:focus-visible {
+  border-color: rgba(224, 127, 112, 0.55);
+  color: #e2a49a;
+  outline: none;
+}
+
+.factorio-ingredient-search input[type="search"] {
+  padding-left: 0.78rem;
+}
+
+.factorio-search-results {
+  display: grid;
+  max-height: 310px;
+  overflow-y: auto;
+  gap: 0.32rem;
+}
+
+.factorio-search-results > button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.42rem;
+  border: 1px solid rgba(220, 226, 209, 0.1);
+  border-radius: 8px;
+  color: #ccd2cb;
+  background: rgba(255, 255, 255, 0.022);
+  text-align: left;
+  cursor: pointer;
+}
+
+.factorio-search-results > button:hover,
+.factorio-search-results > button:focus-visible {
+  border-color: rgba(130, 210, 156, 0.42);
+  background: rgba(130, 210, 156, 0.055);
+  outline: none;
+}
+
+.factorio-search-results > button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.factorio-search-results > button > span {
+  display: grid;
+  min-width: 0;
+}
+
+.factorio-search-results strong {
+  overflow: hidden;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-search-results small {
+  color: #717a72;
+  font: 0.49rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+}
+
+.factorio-search-results b {
+  color: #94c7a2;
+  font-size: 0.57rem;
+}
+
+.factorio-search-results > p {
+  margin: 0;
+  padding: 0.65rem;
+  color: #858e86;
+  font-size: 0.62rem;
+}
+
+.factorio-advanced-inputs {
+  color: #8d968e;
+  font-size: 0.62rem;
+}
+
+.factorio-advanced-inputs summary {
+  cursor: pointer;
+}
+
+.factorio-advanced-inputs label {
+  margin-top: 0.65rem;
+}
+
+.factorio-advanced-inputs textarea {
+  min-height: 82px;
+}
+
 .factorio-presets {
   display: flex;
-  margin-top: -0.7rem;
   gap: 0.45rem;
 }
 
@@ -1495,6 +1793,13 @@ img {
 
 .factorio-result__heading h2 {
   font-size: 1.35rem;
+}
+
+.factorio-result__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .factorio-valid {
@@ -1638,6 +1943,16 @@ img {
   font-family: inherit;
 }
 
+.factorio-rates td:first-child .factorio-material-icon {
+  margin-right: 0.45rem;
+  vertical-align: middle;
+}
+
+.factorio-rates td:first-child > span:last-child {
+  display: inline-grid;
+  vertical-align: middle;
+}
+
 .factorio-rates td small {
   display: block;
   margin-top: 0.1rem;
@@ -1697,6 +2012,12 @@ img {
   color: #737c74;
   font-size: 0.59rem;
   line-height: 1.55;
+}
+
+.factorio-icon-credit {
+  margin: 0.25rem 0 0;
+  color: #596159;
+  font-size: 0.52rem;
 }
 
 @media (max-width: 960px) {
