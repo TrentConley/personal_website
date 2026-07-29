@@ -18,6 +18,24 @@ const MAX_ZOOM = 8;
 const VIEW_PADDING = 42;
 const MACHINE_NAMES = new Set(["assembling-machine-3", "electric-furnace", "chemical-plant"]);
 const imageCache = new Map<string, HTMLImageElement>();
+const SPRITE_ROOT = "/factorio-entity-sprites";
+const ICON_ROOT = "/factorio-icons";
+const GROUND_TEXTURE = `${SPRITE_ROOT}/concrete.png`;
+
+type DirectionName = "north" | "east" | "south" | "west";
+
+interface SpriteSpec {
+  path: string;
+  width: number;
+  height: number;
+  shiftX?: number;
+  shiftY?: number;
+}
+
+interface EntityRenderData {
+  main?: SpriteSpec;
+  shadow?: SpriteSpec;
+}
 
 interface Size {
   width: number;
@@ -45,6 +63,20 @@ interface HoveredEntity {
   left: number;
   top: number;
 }
+
+const DIRECTION_NAMES: Record<number, DirectionName> = {
+  0: "north",
+  4: "east",
+  8: "south",
+  12: "west",
+};
+
+const DIRECTION_VECTORS: Record<number, Point> = {
+  0: { x: 0, y: -1 },
+  4: { x: 1, y: 0 },
+  8: { x: 0, y: 1 },
+  12: { x: -1, y: 0 },
+};
 
 function title(value: string): string {
   return value
@@ -115,22 +147,6 @@ function calculateBounds(entities: ChainPlannedEntity[], ports: ChainPort[]): Bo
   };
 }
 
-function materialColor(material: string | undefined): string {
-  if (!material) return "#9ba59c";
-  let hash = 0;
-  for (let index = 0; index < material.length; index += 1) {
-    hash = ((hash << 5) - hash + material.charCodeAt(index)) | 0;
-  }
-  const hue = ((hash % 360) + 360) % 360;
-  return `hsl(${hue} 52% 59%)`;
-}
-
-function beltColor(name: string): string {
-  if (name.startsWith("express-")) return "#3c91bd";
-  if (name.startsWith("fast-")) return "#c85e5d";
-  return "#c7a84c";
-}
-
 function roleOrder(role: ChainPlannedEntity["role"]): number {
   if (role === "pipe" || role === "material-bus" || role === "input-belt" || role === "output-belt") return 0;
   if (role === "ingredient-branch" || role === "ingredient-feeder") return 1;
@@ -140,12 +156,41 @@ function roleOrder(role: ChainPlannedEntity["role"]): number {
   return 5;
 }
 
-function loadIcon(name: string): Promise<void> {
-  let image = imageCache.get(name);
+function directionName(direction = 0): DirectionName {
+  return DIRECTION_NAMES[direction] ?? "north";
+}
+
+function positionKey(point: Point): string {
+  return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+}
+
+function isBelt(planned: ChainPlannedEntity | undefined): boolean {
+  return Boolean(planned?.entity.name.endsWith("transport-belt"));
+}
+
+function spriteSpec(
+  path: string,
+  sourceWidth: number,
+  sourceHeight: number,
+  scale = 0.5,
+  shiftPixelsX = 0,
+  shiftPixelsY = 0,
+): SpriteSpec {
+  return {
+    path: `${SPRITE_ROOT}/${path}.png`,
+    width: sourceWidth * scale / 32,
+    height: sourceHeight * scale / 32,
+    shiftX: shiftPixelsX / 32,
+    shiftY: shiftPixelsY / 32,
+  };
+}
+
+function loadAsset(path: string): Promise<void> {
+  let image = imageCache.get(path);
   if (!image) {
     image = new Image();
-    image.src = `/factorio-icons/${name}.png`;
-    imageCache.set(name, image);
+    image.src = path;
+    imageCache.set(path, image);
   }
   if (image.complete) return Promise.resolve();
   return new Promise((resolve) => {
@@ -154,17 +199,23 @@ function loadIcon(name: string): Promise<void> {
   });
 }
 
-function drawRoundedRect(
+function drawSprite(
   context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
+  spec: SpriteSpec,
+  opacity = 1,
 ): void {
-  const resolvedRadius = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.roundRect(x, y, width, height, resolvedRadius);
+  const image = imageCache.get(spec.path);
+  if (!image?.complete || image.naturalWidth === 0) return;
+  context.save();
+  context.globalAlpha = opacity;
+  context.drawImage(
+    image,
+    -(spec.width / 2) + (spec.shiftX ?? 0),
+    -(spec.height / 2) + (spec.shiftY ?? 0),
+    spec.width,
+    spec.height,
+  );
+  context.restore();
 }
 
 function drawIcon(
@@ -175,7 +226,7 @@ function drawIcon(
   size: number,
   opacity = 1,
 ): void {
-  const image = imageCache.get(name);
+  const image = imageCache.get(`${ICON_ROOT}/${name}.png`);
   if (!image?.complete || image.naturalWidth === 0) return;
   context.save();
   context.globalAlpha = opacity;
@@ -183,20 +234,157 @@ function drawIcon(
   context.restore();
 }
 
-function drawDirection(
+function beltShape(
+  planned: ChainPlannedEntity,
+  entitiesAtPosition: Map<string, ChainPlannedEntity>,
+): string {
+  const currentDirection = planned.entity.direction ?? 0;
+  const currentName = directionName(currentDirection);
+  for (const incomingDirection of [0, 4, 8, 12]) {
+    if (incomingDirection === currentDirection || incomingDirection === (currentDirection + 8) % 16) continue;
+    const vector = DIRECTION_VECTORS[incomingDirection];
+    const candidate = entitiesAtPosition.get(positionKey({
+      x: planned.entity.position.x - vector.x,
+      y: planned.entity.position.y - vector.y,
+    }));
+    if (isBelt(candidate)
+      && candidate?.entity.direction === incomingDirection
+      && candidate.material === planned.material) {
+      return `${directionName(incomingDirection)}-to-${currentName}`;
+    }
+  }
+  return currentName;
+}
+
+const PIPE_SPRITES: Record<number, string> = {
+  0: "pipe-straight-vertical-single",
+  1: "pipe-ending-up",
+  2: "pipe-ending-right",
+  3: "pipe-corner-up-right",
+  4: "pipe-ending-down",
+  5: "pipe-straight-vertical",
+  6: "pipe-corner-down-right",
+  7: "pipe-t-right",
+  8: "pipe-ending-left",
+  9: "pipe-corner-up-left",
+  10: "pipe-straight-horizontal",
+  11: "pipe-t-up",
+  12: "pipe-corner-down-left",
+  13: "pipe-t-left",
+  14: "pipe-t-down",
+  15: "pipe-cross",
+};
+
+function pipeSpriteName(
+  planned: ChainPlannedEntity,
+  entitiesAtPosition: Map<string, ChainPlannedEntity>,
+): string {
+  let mask = 0;
+  for (const [direction, bit] of [[0, 1], [4, 2], [8, 4], [12, 8]] as const) {
+    const vector = DIRECTION_VECTORS[direction];
+    const candidate = entitiesAtPosition.get(positionKey({
+      x: planned.entity.position.x + vector.x,
+      y: planned.entity.position.y + vector.y,
+    }));
+    const fluidEntity = candidate?.entity.name === "pipe"
+      || candidate?.entity.name === "pipe-to-ground"
+      || candidate?.entity.name === "pump";
+    if (fluidEntity && candidate?.material === planned.material) mask |= bit;
+  }
+  return PIPE_SPRITES[mask] ?? PIPE_SPRITES[0];
+}
+
+function renderDataFor(
+  planned: ChainPlannedEntity,
+  entitiesAtPosition: Map<string, ChainPlannedEntity>,
+): EntityRenderData {
+  const { entity } = planned;
+  const direction = directionName(entity.direction);
+
+  if (isBelt(planned)) {
+    return { main: spriteSpec(`${entity.name}-${beltShape(planned, entitiesAtPosition)}`, 128, 128) };
+  }
+  if (entity.name.endsWith("underground-belt")) {
+    const beltType = entity.type === "input" ? "input" : "output";
+    return { main: spriteSpec(`${entity.name}-${beltType}-${direction}`, 192, 192) };
+  }
+  if (entity.name.endsWith("splitter")) {
+    const dimensions: Record<DirectionName, [number, number, number, number]> = {
+      north: [160, 70, 7, 0],
+      east: [90, 84, 4, 13],
+      south: [164, 64, 4, 0],
+      west: [90, 86, 6, 12],
+    };
+    const [width, height, shiftX, shiftY] = dimensions[direction];
+    return { main: spriteSpec(`${entity.name}-${direction}`, width, height, 0.5, shiftX, shiftY) };
+  }
+  if (entity.name === "pipe") {
+    const spriteName = pipeSpriteName(planned, entitiesAtPosition);
+    const single = spriteName === "pipe-straight-vertical-single";
+    return { main: spriteSpec(spriteName, single ? 160 : 128, single ? 160 : 128) };
+  }
+  if (entity.name === "pipe-to-ground") {
+    const fileDirection = { north: "up", east: "right", south: "down", west: "left" }[direction];
+    return { main: spriteSpec(`pipe-to-ground-${fileDirection}`, 128, 128) };
+  }
+  if (entity.name === "pump") {
+    const dimensions: Record<DirectionName, [number, number, number, number]> = {
+      north: [103, 164, 8, -0.85],
+      east: [130, 109, -0.5, 1.75],
+      south: [114, 160, 12.5, -8],
+      west: [131, 111, -0.25, 1.25],
+    };
+    const [width, height, shiftX, shiftY] = dimensions[direction];
+    return { main: spriteSpec(`pump-${direction}`, width, height, 0.5, shiftX, shiftY) };
+  }
+  if (entity.name === "bulk-inserter" || entity.name === "long-handed-inserter") {
+    return { main: spriteSpec(`${entity.name}-${direction}`, 105, 79, 0.5, 1.5, 6.5) };
+  }
+  if (entity.name === "assembling-machine-3") {
+    return {
+      main: spriteSpec("assembling-machine-3", 214, 237, 0.5, 0, -0.75),
+      shadow: spriteSpec("assembling-machine-3-shadow", 260, 162, 0.5, 28, 4),
+    };
+  }
+  if (entity.name === "electric-furnace") {
+    return {
+      main: spriteSpec("electric-furnace", 239, 219, 0.5, 0.75, 5.75),
+      shadow: spriteSpec("electric-furnace-shadow", 227, 171, 0.5, 11.25, 7.75),
+    };
+  }
+  if (entity.name === "chemical-plant") {
+    return {
+      main: spriteSpec(`chemical-plant-${direction}`, 220, 292, 0.5, 0.5, -9),
+      shadow: spriteSpec("chemical-plant-shadow", 312, 222, 0.5, 27, 6),
+    };
+  }
+  if (entity.name === "substation") {
+    return {
+      main: spriteSpec("substation", 138, 270, 0.5, 0, -31),
+      shadow: spriteSpec("substation-shadow", 370, 104, 0.5, 62, 10),
+    };
+  }
+  return {};
+}
+
+function drawInserterArm(
   context: CanvasRenderingContext2D,
-  direction: number,
-  radius: number,
-  color: string,
+  planned: ChainPlannedEntity,
 ): void {
+  const vector = DIRECTION_VECTORS[planned.entity.direction ?? 0];
+  const long = planned.entity.name === "long-handed-inserter";
+  const reach = long ? 1.75 : 0.85;
   context.save();
-  context.rotate(direction * Math.PI / 8);
-  context.fillStyle = color;
+  context.lineCap = "round";
+  context.strokeStyle = long ? "#c94e3f" : "#62b856";
+  context.lineWidth = long ? 0.13 : 0.15;
   context.beginPath();
-  context.moveTo(0, -radius);
-  context.lineTo(radius * 0.62, radius * 0.34);
-  context.lineTo(-radius * 0.62, radius * 0.34);
-  context.closePath();
+  context.moveTo(-vector.x * reach * 0.55, -vector.y * reach * 0.55);
+  context.lineTo(vector.x * reach, vector.y * reach);
+  context.stroke();
+  context.fillStyle = "#d6d0a9";
+  context.beginPath();
+  context.arc(vector.x * reach, vector.y * reach, 0.13, 0, Math.PI * 2);
   context.fill();
   context.restore();
 }
@@ -205,95 +393,97 @@ function drawEntity(
   context: CanvasRenderingContext2D,
   planned: ChainPlannedEntity,
   pixelsPerTile: number,
+  renderData: EntityRenderData,
 ): void {
   const { entity, role, material } = planned;
-  const size = footprint(planned);
-  const width = size.width * 0.88;
-  const height = size.height * 0.88;
-  const materialTint = materialColor(material);
-  const line = Math.max(0.08, 1 / pixelsPerTile);
-  const transportRole = role === "input-belt"
-    || role === "material-bus"
-    || role === "ingredient-branch"
-    || role === "ingredient-feeder"
-    || role === "output-belt";
-
   context.save();
   context.translate(entity.position.x, entity.position.y);
 
-  if (entity.name === "pipe") {
-    context.strokeStyle = "#6f9694";
-    context.lineWidth = 0.42;
-    context.lineCap = "round";
-    context.beginPath();
-    context.moveTo(-0.47, 0);
-    context.lineTo(0.47, 0);
-    context.moveTo(0, -0.47);
-    context.lineTo(0, 0.47);
-    context.stroke();
-    context.fillStyle = materialTint;
-    context.beginPath();
-    context.arc(0, 0, 0.12, 0, Math.PI * 2);
-    context.fill();
-  } else if (transportRole) {
-    drawRoundedRect(context, -width / 2, -height / 2, width, height, 0.16);
-    context.fillStyle = beltColor(entity.name);
-    context.fill();
-    context.strokeStyle = "rgba(7, 11, 8, 0.72)";
-    context.lineWidth = line;
-    context.stroke();
-    context.fillStyle = materialTint;
-    context.globalAlpha = 0.78;
-    context.fillRect(-width * 0.36, -height * 0.36, width * 0.16, height * 0.72);
-    context.globalAlpha = 1;
-    drawDirection(context, entity.direction ?? 0, 0.23, "rgba(245, 242, 221, 0.86)");
-  } else if (role === "input-inserter" || role === "output-inserter") {
-    context.strokeStyle = role === "input-inserter" ? "#d8c564" : "#8bcf9e";
-    context.lineWidth = 0.18;
-    context.beginPath();
-    context.arc(0, 0, 0.29, 0, Math.PI * 2);
-    context.stroke();
-    drawDirection(context, entity.direction ?? 0, 0.22, context.strokeStyle.toString());
-    if (pixelsPerTile >= 13) drawIcon(context, entity.name, 0, 0, 0.68, 0.82);
+  if (pixelsPerTile < 0.35 || !renderData.main) {
+    const size = footprint(planned);
+    context.fillStyle = role === "machine"
+      ? "#c99657"
+      : role === "power-pole"
+        ? "#77a6ad"
+        : entity.name === "pipe" || entity.name === "pipe-to-ground"
+          ? "#a6b7b6"
+          : "#7894a6";
+    context.fillRect(-size.width * 0.42, -size.height * 0.42, size.width * 0.84, size.height * 0.84);
   } else {
-    const isMachine = role === "machine";
-    const isPower = role === "power-pole";
-    const fill = isMachine
-      ? "#263129"
-      : isPower
-        ? "#23343a"
-        : role === "pipe-to-ground"
-          ? "#4f7574"
-          : beltColor(entity.name);
-    drawRoundedRect(context, -width / 2, -height / 2, width, height, isMachine ? 0.28 : 0.17);
-    context.fillStyle = fill;
-    context.fill();
-    context.strokeStyle = isMachine ? materialTint : "rgba(224, 231, 220, 0.42)";
-    context.lineWidth = isMachine ? Math.max(0.1, 1.5 / pixelsPerTile) : line;
-    context.stroke();
-
-    if (isMachine) {
-      context.fillStyle = "rgba(4, 7, 5, 0.3)";
-      drawRoundedRect(context, -width * 0.38, -height * 0.38, width * 0.76, height * 0.76, 0.2);
+    if (renderData.shadow) drawSprite(context, renderData.shadow, 0.72);
+    drawSprite(context, renderData.main);
+    if (role === "input-inserter" || role === "output-inserter") drawInserterArm(context, planned);
+    if (isBelt(planned) && material && entity.entity_number % 6 === 0 && pixelsPerTile >= 4.5) {
+      context.fillStyle = "rgba(17, 20, 16, 0.78)";
+      context.beginPath();
+      context.arc(0, 0, 0.27, 0, Math.PI * 2);
       context.fill();
-      drawIcon(context, entity.name, 0, 0, Math.min(width, height) * 0.62, 0.94);
-      if (material && pixelsPerTile >= 6) {
-        context.fillStyle = "rgba(7, 10, 8, 0.88)";
-        context.beginPath();
-        context.arc(width * 0.3, height * 0.3, 0.32, 0, Math.PI * 2);
-        context.fill();
-        drawIcon(context, material, width * 0.3, height * 0.3, 0.48, 1);
-      }
-    } else {
-      if (pixelsPerTile >= 7 || isPower || role === "splitter") {
-        drawIcon(context, entity.name, 0, 0, Math.min(width, height) * 0.72, 0.9);
-      }
-      if (role === "underground-belt" || role === "pipe-to-ground" || role === "splitter" || entity.name === "pump") {
-        drawDirection(context, entity.direction ?? 0, Math.min(width, height) * 0.24, "rgba(246, 244, 228, 0.88)");
-      }
+      drawIcon(context, material, 0, 0, 0.47, 0.98);
+    }
+    if (role === "machine" && material && pixelsPerTile >= 4.5) {
+      context.fillStyle = "rgba(12, 16, 12, 0.9)";
+      context.beginPath();
+      context.arc(1.03, 1.03, 0.34, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "rgba(226, 231, 217, 0.56)";
+      context.lineWidth = Math.max(0.06, 1 / pixelsPerTile);
+      context.stroke();
+      drawIcon(context, material, 1.03, 1.03, 0.54);
     }
   }
   context.restore();
+}
+
+function drawPowerConnections(
+  context: CanvasRenderingContext2D,
+  entities: ChainPlannedEntity[],
+  pixelsPerTile: number,
+): void {
+  const substations = entities.filter((planned) => planned.entity.name === "substation");
+  context.save();
+  context.lineCap = "round";
+  for (let leftIndex = 0; leftIndex < substations.length; leftIndex += 1) {
+    const left = substations[leftIndex].entity.position;
+    for (let rightIndex = leftIndex + 1; rightIndex < substations.length; rightIndex += 1) {
+      const right = substations[rightIndex].entity.position;
+      const deltaX = right.x - left.x;
+      const deltaY = right.y - left.y;
+      const distance = Math.hypot(deltaX, deltaY);
+      const aligned = Math.abs(deltaX) <= 3 || Math.abs(deltaY) <= 3;
+      if (distance > 18.2 || !aligned) continue;
+      context.strokeStyle = "rgba(35, 20, 12, 0.7)";
+      context.lineWidth = Math.max(0.08, 2 / pixelsPerTile);
+      context.beginPath();
+      context.moveTo(left.x, left.y - 1.2);
+      context.lineTo(right.x, right.y - 1.2);
+      context.stroke();
+      context.strokeStyle = "rgba(190, 126, 63, 0.82)";
+      context.lineWidth = Math.max(0.035, 0.85 / pixelsPerTile);
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function drawGround(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  context.fillStyle = "#29332b";
+  context.fillRect(0, 0, width, height);
+  const texture = imageCache.get(GROUND_TEXTURE);
+  if (texture?.complete && texture.naturalWidth > 0) {
+    context.save();
+    context.globalAlpha = 0.14;
+    const textureSize = 256;
+    for (let y = 0; y < height; y += textureSize) {
+      for (let x = 0; x < width; x += textureSize) {
+        context.drawImage(texture, 0, 0, 512, 512, x, y, textureSize, textureSize);
+      }
+    }
+    context.restore();
+  }
 }
 
 function drawPort(
@@ -335,7 +525,8 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [hovered, setHovered] = useState<HoveredEntity | null>(null);
-  const [iconRevision, setIconRevision] = useState(0);
+  const [assetRevision, setAssetRevision] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   const ports = useMemo(
     () => [...blueprint.inputPorts, blueprint.outputPort],
@@ -349,11 +540,26 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
     () => [...blueprint.entities].sort((left, right) => roleOrder(left.role) - roleOrder(right.role)),
     [blueprint.entities],
   );
-  const iconNames = useMemo(() => [...new Set([
-    ...blueprint.entities.flatMap((planned) => [planned.entity.name, planned.material]
-      .filter((name): name is string => Boolean(name) && !name?.includes("+"))),
-    ...ports.map((port) => port.material),
-  ])], [blueprint.entities, ports]);
+  const entitiesAtPosition = useMemo(
+    () => new Map(blueprint.entities.map((planned) => [positionKey(planned.entity.position), planned])),
+    [blueprint.entities],
+  );
+  const entityRenderData = useMemo(
+    () => new Map(blueprint.entities.map((planned) => [
+      planned.entity.entity_number,
+      renderDataFor(planned, entitiesAtPosition),
+    ])),
+    [blueprint.entities, entitiesAtPosition],
+  );
+  const assetPaths = useMemo(() => [...new Set([
+    GROUND_TEXTURE,
+    ...[...entityRenderData.values()].flatMap((data) => [data.main?.path, data.shadow?.path]
+      .filter((path): path is string => Boolean(path))),
+    ...blueprint.entities.map((planned) => planned.material)
+      .filter((name): name is string => Boolean(name) && !name?.includes("+"))
+      .map((name) => `${ICON_ROOT}/${name}.png`),
+    ...ports.map((port) => `${ICON_ROOT}/${port.material}.png`),
+  ])], [blueprint.entities, entityRenderData, ports]);
   const fitScale = useMemo(() => Math.max(
     0.08,
     Math.min(
@@ -382,11 +588,24 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
 
   useEffect(() => {
     let active = true;
-    void Promise.all(iconNames.map(loadIcon)).then(() => {
-      if (active) setIconRevision((revision) => revision + 1);
+    void Promise.all(assetPaths.map(loadAsset)).then(() => {
+      if (active) setAssetRevision((revision) => revision + 1);
     });
     return () => { active = false; };
-  }, [iconNames]);
+  }, [assetPaths]);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.body.classList.add("factorio-preview-open");
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.classList.remove("factorio-preview-open");
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     setZoom(1);
@@ -405,8 +624,7 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
     canvas.style.width = `${viewport.width}px`;
     canvas.style.height = `${viewport.height}px`;
     context.setTransform(density, 0, 0, density, 0, 0);
-    context.fillStyle = "#0b100c";
-    context.fillRect(0, 0, viewport.width, viewport.height);
+    drawGround(context, viewport.width, viewport.height);
 
     const originX = viewport.width / 2 + pan.x;
     const originY = viewport.height / 2 + pan.y;
@@ -420,9 +638,9 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
     context.scale(pixelsPerTile, pixelsPerTile);
     context.translate(-bounds.centerX, -bounds.centerY);
 
-    const gridStep = pixelsPerTile >= 8 ? 1 : pixelsPerTile >= 3 ? 4 : 8;
+    const gridStep = pixelsPerTile >= 2.5 ? 1 : pixelsPerTile >= 1 ? 4 : 8;
     context.lineWidth = Math.max(0.035, 0.6 / pixelsPerTile);
-    context.strokeStyle = "rgba(203, 216, 202, 0.07)";
+    context.strokeStyle = "rgba(220, 226, 209, 0.085)";
     context.beginPath();
     for (let x = Math.floor(bounds.minX / gridStep) * gridStep; x <= bounds.maxX; x += gridStep) {
       context.moveTo(x, bounds.minY);
@@ -434,18 +652,26 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
     }
     context.stroke();
 
-    context.strokeStyle = "rgba(130, 210, 156, 0.12)";
+    context.strokeStyle = "rgba(232, 236, 220, 0.18)";
     context.lineWidth = Math.max(0.06, 1 / pixelsPerTile);
     context.setLineDash([1.2, 1.2]);
     context.strokeRect(bounds.minX, bounds.minY, bounds.width, bounds.height);
     context.setLineDash([]);
 
-    for (const planned of orderedEntities) drawEntity(context, planned, pixelsPerTile);
+    drawPowerConnections(context, blueprint.entities, pixelsPerTile);
+    for (const planned of orderedEntities) {
+      drawEntity(
+        context,
+        planned,
+        pixelsPerTile,
+        entityRenderData.get(planned.entity.entity_number) ?? {},
+      );
+    }
     context.restore();
 
     for (const port of blueprint.inputPorts) drawPort(context, port, worldToScreen(port.position), true);
     drawPort(context, blueprint.outputPort, worldToScreen(blueprint.outputPort.position), false);
-  }, [blueprint, bounds, iconRevision, orderedEntities, pan, pixelsPerTile, viewport]);
+  }, [assetRevision, blueprint, bounds, entityRenderData, orderedEntities, pan, pixelsPerTile, viewport]);
 
   const resetView = () => {
     setZoom(1);
@@ -547,10 +773,10 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
   };
 
   return (
-    <section className="factorio-preview" aria-labelledby="factorio-preview-heading">
+    <section className={`factorio-preview${expanded ? " is-expanded" : ""}`} aria-labelledby="factorio-preview-heading">
       <div className="factorio-preview__heading">
         <div>
-          <small>Plan view</small>
+          <small>Factorio view · exact vanilla sprites</small>
           <h3 id="factorio-preview-heading">Blueprint preview</h3>
           <p>{blueprint.entities.length.toLocaleString()} placed entities · {machineCount.toLocaleString()} machines</p>
         </div>
@@ -559,6 +785,12 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
           <output aria-label="Blueprint zoom">{Math.round(zoom * 100)}%</output>
           <button type="button" onClick={() => adjustZoom(1.25)} aria-label="Zoom blueprint in">+</button>
           <button type="button" className="factorio-preview__fit" onClick={resetView}>Fit</button>
+          <button
+            type="button"
+            className="factorio-preview__expand"
+            onClick={() => setExpanded((current) => !current)}
+            aria-label={expanded ? "Close expanded blueprint preview" : "Expand blueprint preview"}
+          >{expanded ? "Close" : "Expand"}</button>
         </div>
       </div>
 
@@ -590,8 +822,8 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
       <div className="factorio-preview__legend">
         <span><i className="is-input" />Input ports</span>
         <span><i className="is-output" />Output port</span>
-        <span><i className="is-material" />Material flow</span>
-        <span><i className="is-machine" />Machines</span>
+        <span><i className="is-material" />Items on belts</span>
+        <span><i className="is-machine" />Vanilla entity sprites</span>
         <small>Drag to pan · scroll to zoom · hover to inspect</small>
       </div>
     </section>

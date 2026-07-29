@@ -1874,11 +1874,28 @@ img {
 }
 
 .factorio-preview {
+  position: relative;
   margin-top: 1.25rem;
   overflow: hidden;
   border: 1px solid var(--factory-line);
   border-radius: 12px;
   background: rgba(7, 11, 8, 0.48);
+}
+
+body.factorio-preview-open {
+  overflow: hidden;
+}
+
+.factorio-preview.is-expanded {
+  position: fixed;
+  inset: 12px;
+  z-index: 1000;
+  display: grid;
+  margin: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-color: rgba(225, 229, 215, 0.28);
+  background: #121814;
+  box-shadow: 0 0 0 12px rgba(4, 7, 5, 0.88), 0 28px 90px rgba(0, 0, 0, 0.72);
 }
 
 .factorio-preview__heading {
@@ -1954,10 +1971,15 @@ img {
   color: #8da795;
 }
 
-.factorio-preview__controls .factorio-preview__fit {
+.factorio-preview__controls .factorio-preview__fit,
+.factorio-preview__controls .factorio-preview__expand {
   width: auto;
   min-width: 44px;
   padding: 0 0.55rem;
+}
+
+.factorio-preview__controls .factorio-preview__expand {
+  min-width: 58px;
   border-right: 0;
 }
 
@@ -1967,6 +1989,7 @@ img {
   height: clamp(360px, 46vw, 520px);
   overflow: hidden;
   cursor: grab;
+  background: #29332b;
   touch-action: none;
   user-select: none;
 }
@@ -1978,6 +2001,11 @@ img {
 
 .factorio-preview__viewport.is-panning {
   cursor: grabbing;
+}
+
+.factorio-preview.is-expanded .factorio-preview__viewport {
+  height: auto;
+  min-height: 0;
 }
 
 .factorio-preview__viewport canvas {
@@ -2276,6 +2304,13 @@ img {
 
   .factorio-preview__viewport {
     height: 380px;
+  }
+
+  .factorio-preview.is-expanded {
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .factorio-preview__legend > small {
