@@ -1,6 +1,7 @@
 import { BELTS } from "../core/throughput";
 import { MATERIAL_TYPES, materialType, recipeFor } from "./catalog";
 import { Fraction } from "./fraction";
+import { groupSolidIngredients } from "./ingredient-groups";
 import type {
   ChainGeneratorConfig,
   ChainPlan,
@@ -9,6 +10,8 @@ import type {
 } from "./types";
 
 const MACHINE_UTILIZATION = 0.9;
+const NEAR_INSERTER_ITEMS_PER_SECOND = 2;
+const LONG_HANDED_ITEMS_PER_SECOND = 1;
 export const DEFAULT_PIPE_CAPACITY_PER_SECOND = 1_200;
 
 function validatePositive(value: number, label: string): void {
@@ -105,6 +108,15 @@ export function planChain(config: ChainGeneratorConfig): ChainPlan {
   // Keep the advertised target within that proven 50% lane capacity.
   const outputTransportCapacity = materialType(config.output) === "item" ? beltCapacity / 2 : pipeCapacity;
   let maximumOutput = outputTransportCapacity;
+  for (const [material, unitRate] of expansion.materials) {
+    if (!expansion.recipes.has(material)) continue;
+    const recipe = recipeFor(material)!;
+    if (recipe.ingredients.filter((ingredient) => ingredient.type === "item").length <= 4) continue;
+    const oneMachineOutput =
+      (recipe.result.amount * recipe.machine.craftingSpeed * MACHINE_UTILIZATION) /
+      recipe.energySeconds;
+    maximumOutput = Math.min(maximumOutput, oneMachineOutput / unitRate.toNumber());
+  }
   for (const [name, unitRate] of expansion.boundaries) {
     maximumOutput = Math.min(maximumOutput, inputCaps.get(name)! / unitRate.toNumber());
   }
@@ -142,6 +154,36 @@ export function planChain(config: ChainGeneratorConfig): ChainPlan {
     };
   });
 
+  function sizeMachines(recipe: PlannedRecipe): void {
+    let required = Math.ceil(
+      recipe.designedOutputPerSecond / recipe.machineCapacityPerSecond - 1e-12,
+    );
+    const designScale = recipe.designedOutputPerSecond / recipe.outputPerSecond;
+    const groups = groupSolidIngredients(
+      recipe.ingredientRates
+        .filter((ingredient) => ingredient.type === "item")
+        .map((ingredient) => ({
+          name: ingredient.name,
+          perSecond: ingredient.perSecond * designScale,
+        })),
+    );
+    if (recipe.ingredientRates.filter((ingredient) => ingredient.type === "item").length > 4) {
+      recipe.machineCount = Math.max(1, required);
+      return;
+    }
+    const hasFluid = recipe.ingredientRates.some((ingredient) => ingredient.type === "fluid") ||
+      recipe.materialType === "fluid";
+    groups.forEach((group, groupIndex) => {
+      const longHanded = hasFluid ? groupIndex >= 1 : groupIndex >= 2;
+      const inserterCapacity = longHanded
+        ? LONG_HANDED_ITEMS_PER_SECOND
+        : NEAR_INSERTER_ITEMS_PER_SECOND;
+      const groupRate = group.reduce((sum, ingredient) => sum + ingredient.perSecond, 0);
+      required = Math.max(required, Math.ceil(groupRate / inserterCapacity - 1e-12));
+    });
+    recipe.machineCount = Math.max(1, required);
+  }
+
   function distributionRequirement(material: string): number {
     const consumerRates = recipes.flatMap((consumer) =>
       consumer.ingredientRates
@@ -169,9 +211,7 @@ export function planChain(config: ChainGeneratorConfig): ChainPlan {
       producer.outputPerSecond,
       distributionRequirement(producer.material),
     );
-    producer.machineCount = Math.ceil(
-      producer.designedOutputPerSecond / producer.machineCapacityPerSecond - 1e-12,
-    );
+    sizeMachines(producer);
   }
 
   const boundaryRequirements = new Map(
@@ -213,9 +253,7 @@ export function planChain(config: ChainGeneratorConfig): ChainPlan {
       recipe.designedOutputPerSecond *= finalScale;
       recipe.craftsPerSecond *= finalScale;
       recipe.ingredientRates.forEach((ingredient) => { ingredient.perSecond *= finalScale; });
-      recipe.machineCount = Math.ceil(
-        recipe.designedOutputPerSecond / recipe.machineCapacityPerSecond - 1e-12,
-      );
+      sizeMachines(recipe);
     }
     for (const [name, required] of boundaryRequirements) {
       boundaryRequirements.set(name, required * finalScale);

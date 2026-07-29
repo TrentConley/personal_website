@@ -41,6 +41,12 @@ export interface CatalogRecipe {
   result: CatalogAmount;
 }
 
+export interface ProductGroup {
+  id: string;
+  label: string;
+  products: string[];
+}
+
 export interface PlannedRecipe {
   material: string;
   materialType: MaterialType;

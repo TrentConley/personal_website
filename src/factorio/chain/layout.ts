@@ -1,5 +1,6 @@
 import { BELTS } from "../core/throughput";
 import type { CardinalDirection, Side } from "../core/types";
+import { groupSolidIngredients } from "./ingredient-groups";
 import type {
   ChainEntityRole,
   ChainPlan,
@@ -96,13 +97,24 @@ export function addVerticalBelt(
   const direction: CardinalDirection = south ? 8 : 0;
   const minimum = Math.min(fromY, toY);
   const maximum = Math.max(fromY, toY);
-  const crossings = crossingRows.filter((row) => row > minimum && row < maximum);
-  const undergroundTiles = new Map<number, "input" | "output">();
+  const crossings = [...new Set(crossingRows)]
+    .filter((row) => row > minimum && row < maximum)
+    .sort((left, right) => left - right);
+  const clusters: Array<{ start: number; end: number }> = [];
   for (const row of crossings) {
-    undergroundTiles.set(south ? row - 1 : row + 1, "input");
-    undergroundTiles.set(south ? row + 1 : row - 1, "output");
+    const cluster = clusters.at(-1);
+    if (cluster && row <= cluster.end + 2) cluster.end = row;
+    else clusters.push({ start: row, end: row });
   }
-  const skippedTiles = new Set(crossings);
+  const undergroundTiles = new Map<number, "input" | "output">();
+  const skippedTiles = new Set<number>();
+  for (const cluster of clusters) {
+    const entrance = south ? cluster.start - 1 : cluster.end + 1;
+    const exit = south ? cluster.end + 1 : cluster.start - 1;
+    undergroundTiles.set(entrance, "input");
+    undergroundTiles.set(exit, "output");
+    for (let y = cluster.start; y <= cluster.end; y += 1) skippedTiles.add(y);
+  }
   for (let y = fromY; south ? y <= toY : y >= toY; y += south ? 1 : -1) {
     if (skippedTiles.has(y)) continue;
     drafts.push({
@@ -257,13 +269,9 @@ function addHorizontalPipeBus(
 
 function splitItemGroups(recipe: PlannedRecipe): Array<Array<{ name: string; perSecond: number }>> {
   const designScale = recipe.designedOutputPerSecond / recipe.outputPerSecond;
-  const items = recipe.ingredientRates
+  return groupSolidIngredients(recipe.ingredientRates
     .filter((ingredient) => ingredient.type === "item")
-    .map(({ name, perSecond }) => ({ name, perSecond: perSecond * designScale }))
-    .sort((left, right) => right.perSecond - left.perSecond);
-  if (items.length > 4) throw new Error(`${recipe.recipe.id} has more than four solid ingredients.`);
-  if (items.length <= 2) return items.length === 0 ? [] : [items];
-  return [[items[0], items[3]].filter(Boolean), [items[1], items[2]].filter(Boolean)];
+    .map(({ name, perSecond }) => ({ name, perSecond: perSecond * designScale })));
 }
 
 function buildItemFeeder(
@@ -277,23 +285,29 @@ function buildItemFeeder(
   feederY: number,
   endX: number,
   localCrossings: number[] = [],
+  loadingY: number = feederY,
 ): void {
-  for (let x = loaderX; x <= endX; x += 1) {
-    drafts.push({
-      role: "ingredient-feeder",
-      material: group.map((ingredient) => ingredient.name).join("+"),
-      name: beltName,
-      position: tilePosition(x, feederY),
-      direction: 4,
-    });
-  }
+  const transitionX = loadingY === feederY ? loaderX : loaderX + 3;
+  const feederPath = [
+    ...Array.from({ length: transitionX - loaderX + 1 }, (_, index) => ({ x: loaderX + index, y: loadingY })),
+    ...(loadingY === feederY ? [] : [{ x: transitionX, y: feederY }]),
+    ...Array.from({ length: endX - transitionX }, (_, index) => ({ x: transitionX + index + 1, y: feederY })),
+  ];
+  addBeltPath(
+    drafts,
+    "ingredient-feeder",
+    group.map((ingredient) => ingredient.name).join("+"),
+    beltName,
+    feederPath,
+    4,
+  );
   if (group[0]) {
     taps.push({
       material: group[0].name,
       type: "item",
       rate: group[0].perSecond,
       branchX: loaderX,
-      targetY: feederY - 1,
+      targetY: loadingY - 1,
       crossingRows: [...busRows, ...localCrossings],
     });
   }
@@ -304,7 +318,7 @@ function buildItemFeeder(
       type: "item",
       rate: group[1].perSecond,
       branchX,
-      targetY: feederY + 1,
+      targetY: loadingY + 1,
       finalDirection: 4,
       crossingRows: [...busRows, ...localCrossings],
     });
@@ -312,17 +326,172 @@ function buildItemFeeder(
       role: "ingredient-branch",
       material: group[1].name,
       name: beltName,
-      position: tilePosition(branchX + 1, feederY + 1),
+      position: tilePosition(branchX + 1, loadingY + 1),
       direction: 4,
     });
     drafts.push({
       role: "ingredient-branch",
       material: group[1].name,
       name: beltName,
-      position: tilePosition(loaderX, feederY + 1),
+      position: tilePosition(loaderX, loadingY + 1),
       direction: 0,
     });
   }
+}
+
+function buildComplexSolidInputs(
+  drafts: Draft[],
+  taps: Tap[],
+  busRows: number[],
+  beltName: string,
+  undergroundName: string,
+  recipePlan: PlannedRecipe,
+  startX: number,
+  machineX: number,
+  machineY: number,
+): void {
+  const designScale = recipePlan.designedOutputPerSecond / recipePlan.outputPerSecond;
+  const ingredients = recipePlan.ingredientRates
+    .filter((ingredient) => ingredient.type === "item")
+    .map((ingredient) => ({
+      name: ingredient.name,
+      perSecond: ingredient.perSecond * designScale,
+    }));
+  if (ingredients.length < 5 || ingredients.length > 8) {
+    throw new Error(`${recipePlan.recipe.id} needs five to eight direct solid inputs.`);
+  }
+
+  const top = ingredients.slice(0, 3);
+  const bottom = ingredients.slice(3, 6);
+  const left = ingredients.slice(6, 8);
+  const topRouteRows = top.map((_, index) => machineY - 5 - index * 4);
+  const bottomRouteRows = bottom.map((_, index) => machineY + 5 + index * 4);
+  const leftRows = left.map((_, index) => machineY - 1 + index * 2);
+  const routeRows = [...topRouteRows, ...bottomRouteRows, ...leftRows];
+
+  top.forEach((ingredient, index) => {
+    const branchX = startX + 8 + index * 4;
+    const pickupX = machineX - 1 + index;
+    const routeY = topRouteRows[index];
+    taps.push({
+      material: ingredient.name,
+      type: "item",
+      rate: ingredient.perSecond,
+      branchX,
+      targetY: routeY,
+      crossingRows: [...busRows, ...routeRows.filter((row) => row !== routeY)],
+      finalDirection: 4,
+    });
+    for (let x = branchX + 1; x < pickupX; x += 1) {
+      drafts.push({
+        role: "ingredient-feeder",
+        material: ingredient.name,
+        recipe: recipePlan.recipe.id,
+        name: beltName,
+        position: tilePosition(x, routeY),
+        direction: 4,
+      });
+    }
+    addVerticalBelt(
+      drafts,
+      ingredient.name,
+      beltName,
+      undergroundName,
+      pickupX,
+      routeY,
+      machineY - 3,
+      topRouteRows.filter((row) => row !== routeY),
+      8,
+    );
+    drafts.push({
+      role: "input-inserter",
+      material: ingredient.name,
+      recipe: recipePlan.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(pickupX, machineY - 2),
+      direction: 0,
+    });
+  });
+
+  bottom.forEach((ingredient, index) => {
+    const branchX = startX + 20 + index * 4;
+    const pickupX = machineX - 1 + index;
+    const routeY = bottomRouteRows[index];
+    taps.push({
+      material: ingredient.name,
+      type: "item",
+      rate: ingredient.perSecond,
+      branchX,
+      targetY: routeY,
+      crossingRows: [...busRows, ...routeRows.filter((row) => row !== routeY)],
+      finalDirection: 4,
+    });
+    for (let x = branchX + 1; x < pickupX; x += 1) {
+      drafts.push({
+        role: "ingredient-feeder",
+        material: ingredient.name,
+        recipe: recipePlan.recipe.id,
+        name: beltName,
+        position: tilePosition(x, routeY),
+        direction: 4,
+      });
+    }
+    addVerticalBelt(
+      drafts,
+      ingredient.name,
+      beltName,
+      undergroundName,
+      pickupX,
+      routeY,
+      machineY + 3,
+      bottomRouteRows.filter((row) => row !== routeY),
+      0,
+    );
+    drafts.push({
+      role: "input-inserter",
+      material: ingredient.name,
+      recipe: recipePlan.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(pickupX, machineY + 2),
+      direction: 8,
+    });
+  });
+
+  left.forEach((ingredient, index) => {
+    const branchX = startX + 32 + index * 4;
+    const pickupY = leftRows[index];
+    const pickupX = machineX - 3;
+    taps.push({
+      material: ingredient.name,
+      type: "item",
+      rate: ingredient.perSecond,
+      branchX,
+      targetY: pickupY,
+      crossingRows: [
+        ...busRows,
+        ...routeRows.filter((row) => row !== pickupY),
+      ],
+      finalDirection: 4,
+    });
+    for (let x = branchX + 1; x <= pickupX; x += 1) {
+      drafts.push({
+        role: "ingredient-feeder",
+        material: ingredient.name,
+        recipe: recipePlan.recipe.id,
+        name: beltName,
+        position: tilePosition(x, pickupY),
+        direction: 4,
+      });
+    }
+    drafts.push({
+      role: "input-inserter",
+      material: ingredient.name,
+      recipe: recipePlan.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(machineX - 2, pickupY),
+      direction: 12,
+    });
+  });
 }
 
 function addMachineOutputBelts(
@@ -332,6 +501,7 @@ function addMachineOutputBelts(
   machineY: number,
   beltName: string,
   undergroundName: string,
+  crossingRows: number[],
 ): void {
   const outputY = machineY + 6;
   for (let x = geometry.machineX + 3; x < geometry.outputX; x += 1) {
@@ -370,7 +540,7 @@ function addMachineOutputBelts(
       branchX,
       machineY + Math.min(...offsets),
       outputY - 1,
-      [machineY + 3],
+      crossingRows,
       8,
     );
   }
@@ -400,7 +570,7 @@ function collides(drafts: Draft[], candidate: Draft): boolean {
 function addPower(drafts: Draft[], factoryStartX: number, factoryEndX: number, machineY: number): void {
   const rows: number[] = [];
   for (let y = 2; y < machineY - 12; y += 16) rows.push(y);
-  rows.push(machineY - 12, machineY + 5);
+  rows.push(machineY - 8, machineY + 9);
   const uniqueRows = [...new Set(rows)].sort((left, right) => left - right);
   for (const row of uniqueRows) {
     for (let x = factoryStartX; x <= factoryEndX + 8; x += 16) {
@@ -505,14 +675,42 @@ export function buildCanonicalLayout(plan: ChainPlan, inputSide: Side, outputSid
 
   for (const recipePlan of plan.recipes) {
     const startX = cursorX;
-    const machineX = startX + 22;
+    const itemGroups = splitItemGroups(recipePlan);
+    const fluidInputs = recipePlan.ingredientRates.filter((ingredient) => ingredient.type === "fluid");
+    const hasFluid = fluidInputs.length > 0 || recipePlan.materialType === "fluid";
+    const solidIngredientCount = recipePlan.ingredientRates.filter((ingredient) => ingredient.type === "item").length;
+    const complexSolidRecipe = solidIngredientCount > 4 && !hasFluid;
+    if (hasFluid && itemGroups.length > 2) {
+      throw new Error(`${recipePlan.recipe.id} has more than four solid ingredients alongside fluids.`);
+    }
+    const extraFeederGroups = hasFluid
+      ? Math.max(0, itemGroups.length - 1)
+      : Math.max(0, itemGroups.length - 2);
+    const machineX = complexSolidRecipe ? startX + 50 : startX + 22 + extraFeederGroups * 6;
     const lastMachineX = machineX + (recipePlan.machineCount - 1) * 6;
     const outputX = lastMachineX + 7;
     const geometry = { plan: recipePlan, startX, machineX, lastMachineX, outputX, endX: outputX + 5 };
     blocks.push(geometry);
-    const itemGroups = splitItemGroups(recipePlan);
-    const fluidInputs = recipePlan.ingredientRates.filter((ingredient) => ingredient.type === "fluid");
-    const hasFluid = fluidInputs.length > 0 || recipePlan.materialType === "fluid";
+    const feederPlacements = hasFluid
+      ? [
+          { loaderX: startX + 14, feederY: machineY + 3, loadingY: machineY + 3, inserterY: machineY + 2, direction: 8 as const, inserter: "bulk-inserter", offsetX: 0 },
+          { loaderX: startX + 20, feederY: machineY + 4, loadingY: machineY + 5, inserterY: machineY + 2, direction: 8 as const, inserter: "long-handed-inserter", offsetX: 1 },
+        ]
+      : [
+          { loaderX: startX + 8, feederY: machineY - 3, loadingY: machineY - 3, inserterY: machineY - 2, direction: 0 as const, inserter: "bulk-inserter", offsetX: -1 },
+          { loaderX: startX + 14, feederY: machineY + 3, loadingY: machineY + 3, inserterY: machineY + 2, direction: 8 as const, inserter: "bulk-inserter", offsetX: -1 },
+          { loaderX: startX + 20, feederY: machineY - 4, loadingY: machineY - 5, inserterY: machineY - 2, direction: 0 as const, inserter: "long-handed-inserter", offsetX: 1 },
+          { loaderX: startX + 26, feederY: machineY + 4, loadingY: machineY + 5, inserterY: machineY + 2, direction: 8 as const, inserter: "long-handed-inserter", offsetX: 1 },
+        ];
+    const feederCrossingRows = complexSolidRecipe
+      ? []
+      : feederPlacements
+          .slice(0, itemGroups.length)
+          .flatMap((placement) => [
+            placement.feederY,
+            placement.loadingY - 1,
+            placement.loadingY + 1,
+          ]);
 
     const designScale = recipePlan.designedOutputPerSecond / recipePlan.outputPerSecond;
     recipePlan.ingredientRates
@@ -526,50 +724,40 @@ export function buildCanonicalLayout(plan: ChainPlan, inputSide: Side, outputSid
         }
       });
 
-    if (hasFluid) {
-      if (itemGroups[0]) {
-        buildItemFeeder(
-          drafts,
-          taps,
-          busRows,
-          belt.entityName,
-          undergroundName,
-          itemGroups[0],
-          startX + 14,
-          machineY + 3,
-          lastMachineX + 1,
-          fluidInputs.map((_, fluidIndex) => machineY - 5 - fluidIndex * 2),
-        );
+    if (complexSolidRecipe) {
+      if (recipePlan.machineCount !== 1) {
+        throw new Error(`${recipePlan.recipe.id} exceeded its single-cell complex recipe capacity.`);
       }
-    } else {
-      if (itemGroups[0]) {
-        buildItemFeeder(
-          drafts,
-          taps,
-          busRows,
-          belt.entityName,
-          undergroundName,
-          itemGroups[0],
-          startX + 8,
-          machineY - 3,
-          lastMachineX + 1,
-        );
-      }
-      if (itemGroups[1]) {
-        buildItemFeeder(
-          drafts,
-          taps,
-          busRows,
-          belt.entityName,
-          undergroundName,
-          itemGroups[1],
-          startX + 14,
-          machineY + 3,
-          lastMachineX + 1,
-          [machineY - 3],
-        );
-      }
-    }
+      buildComplexSolidInputs(
+        drafts,
+        taps,
+        busRows,
+        belt.entityName,
+        undergroundName,
+        recipePlan,
+        startX,
+        machineX,
+        machineY,
+      );
+    } else itemGroups.forEach((group, groupIndex) => {
+      const placement = feederPlacements[groupIndex];
+      buildItemFeeder(
+        drafts,
+        taps,
+        busRows,
+        belt.entityName,
+        undergroundName,
+        group,
+        placement.loaderX,
+        placement.feederY,
+        lastMachineX + 1,
+        [
+          ...feederCrossingRows.filter((row) => row !== placement.feederY),
+          ...fluidInputs.map((_, fluidIndex) => machineY - 5 - fluidIndex * 2),
+        ],
+        placement.loadingY,
+      );
+    });
 
     fluidInputs.forEach((ingredient, fluidIndex) => {
       const headerY = machineY - 5 - fluidIndex * 2;
@@ -579,17 +767,9 @@ export function buildCanonicalLayout(plan: ChainPlan, inputSide: Side, outputSid
         type: "fluid",
         rate: ingredient.perSecond * designScale,
         branchX,
-        targetY: headerY - 3,
+        targetY: headerY,
       });
-      drafts.push({
-        role: "pipe",
-        material: ingredient.name,
-        recipe: recipePlan.recipe.id,
-        name: "pump",
-        position: { x: branchX + 0.5, y: headerY - 1 },
-        direction: 8,
-      });
-      for (let x = branchX; x <= lastMachineX + 1; x += 1) {
+      for (let x = branchX + 1; x <= lastMachineX + 1; x += 1) {
         drafts.push({ role: "pipe", material: ingredient.name, recipe: recipePlan.recipe.id, name: "pipe", position: tilePosition(x, headerY) });
       }
       for (let machine = 0; machine < recipePlan.machineCount; machine += 1) {
@@ -634,6 +814,17 @@ export function buildCanonicalLayout(plan: ChainPlan, inputSide: Side, outputSid
             });
           }
         }
+        if (recipePlan.recipe.machine.name === "assembling-machine-3" && rotationQuarterTurns === 1) {
+          for (const [offsetX, offsetY] of [[-1, -2], [-2, -2], [-2, -1], [-2, 0]] as const) {
+            drafts.push({
+              role: "pipe",
+              material: ingredient.name,
+              recipe: recipePlan.recipe.id,
+              name: "pipe",
+              position: tilePosition(centerX + offsetX, machineY + offsetY),
+            });
+          }
+        }
       }
     });
 
@@ -646,57 +837,31 @@ export function buildCanonicalLayout(plan: ChainPlan, inputSide: Side, outputSid
         name: recipePlan.recipe.machine.name,
         position: tilePosition(centerX, machineY),
         recipeSetting: recipePlan.recipe.id,
+        direction: 0,
       });
-      if (itemGroups[0]) {
-        const count = Math.min(
-          3,
-          Math.max(
-            1,
-            Math.ceil(
-              itemGroups[0].reduce((sum, ingredient) => sum + ingredient.perSecond, 0) /
-                recipePlan.machineCount /
-                2,
-            ),
-          ),
-        );
-        for (const offset of [0, -1, 1].slice(0, count)) {
-          drafts.push({
-            role: "input-inserter",
-            material: itemGroups[0].map((ingredient) => ingredient.name).join("+"),
-            recipe: recipePlan.recipe.id,
-            name: "bulk-inserter",
-            position: tilePosition(centerX + offset, hasFluid ? machineY + 2 : machineY - 2),
-            direction: hasFluid ? 8 : 0,
-          });
-        }
-      }
-      if (itemGroups[1]) {
-        const count = Math.min(
-          3,
-          Math.max(
-            1,
-            Math.ceil(
-              itemGroups[1].reduce((sum, ingredient) => sum + ingredient.perSecond, 0) /
-                recipePlan.machineCount /
-                2,
-            ),
-          ),
-        );
-        for (const offset of [0, -1, 1].slice(0, count)) {
-          drafts.push({
-            role: "input-inserter",
-            material: itemGroups[1].map((ingredient) => ingredient.name).join("+"),
-            recipe: recipePlan.recipe.id,
-            name: "bulk-inserter",
-            position: tilePosition(centerX + offset, machineY + 2),
-            direction: 8,
-          });
-        }
-      }
+      if (!complexSolidRecipe) itemGroups.forEach((group, groupIndex) => {
+        const placement = feederPlacements[groupIndex];
+        drafts.push({
+          role: "input-inserter",
+          material: group.map((ingredient) => ingredient.name).join("+"),
+          recipe: recipePlan.recipe.id,
+          name: placement.inserter,
+          position: tilePosition(centerX + placement.offsetX, placement.inserterY),
+          direction: placement.direction,
+        });
+      });
     }
 
     if (recipePlan.materialType === "item") {
-      addMachineOutputBelts(drafts, recipePlan, geometry, machineY, belt.entityName, undergroundName);
+      addMachineOutputBelts(
+        drafts,
+        recipePlan,
+        geometry,
+        machineY,
+        belt.entityName,
+        undergroundName,
+        feederCrossingRows.filter((row) => row > machineY),
+      );
     } else {
       const headerY = machineY + 5;
       for (let machine = 0; machine < recipePlan.machineCount; machine += 1) {

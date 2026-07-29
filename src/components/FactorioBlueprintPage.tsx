@@ -1,9 +1,15 @@
 import { useMemo, useState } from "react";
-import { generateChainBlueprint, type MaterialRate } from "../factorio/chain";
+import {
+  PRODUCT_GROUPS,
+  boundaryMaterialsFor,
+  directIngredientsFor,
+  generateChainBlueprint,
+  type MaterialRate,
+} from "../factorio/chain";
 import { decodeBlueprint } from "../factorio/core/codec";
 import { BELT_TIERS, SIDES, type BeltTier, type Side } from "../factorio/core/types";
 
-const TARGETS = [
+const FEATURED_TARGETS = [
   "electronic-circuit",
   "advanced-circuit",
   "processing-unit",
@@ -14,32 +20,6 @@ const TARGETS = [
   "production-science-pack",
   "utility-science-pack",
 ] as const;
-
-type Target = (typeof TARGETS)[number];
-
-const RAW_INPUTS: Record<Target, string> = {
-  "electronic-circuit": "iron-ore, copper-ore",
-  "advanced-circuit": "iron-ore, copper-ore, coal, petroleum-gas",
-  "processing-unit": "iron-ore, copper-ore, coal, petroleum-gas, water",
-  "automation-science-pack": "iron-ore, copper-ore",
-  "logistic-science-pack": "iron-ore, copper-ore",
-  "military-science-pack": "iron-ore, copper-ore, coal, stone",
-  "chemical-science-pack": "iron-ore, copper-ore, coal, petroleum-gas, water",
-  "production-science-pack": "iron-ore, copper-ore, coal, stone, petroleum-gas",
-  "utility-science-pack": "iron-ore, copper-ore, coal, petroleum-gas, water, lubricant",
-};
-
-const COMPONENT_INPUTS: Record<Target, string> = {
-  "electronic-circuit": "iron-plate, copper-plate",
-  "advanced-circuit": "electronic-circuit, copper-cable, plastic-bar",
-  "processing-unit": "electronic-circuit, advanced-circuit, sulfuric-acid",
-  "automation-science-pack": "copper-plate, iron-gear-wheel",
-  "logistic-science-pack": "transport-belt, inserter",
-  "military-science-pack": "piercing-rounds-magazine, grenade, stone-wall",
-  "chemical-science-pack": "advanced-circuit, engine-unit, sulfur",
-  "production-science-pack": "electric-furnace, productivity-module, rail",
-  "utility-science-pack": "processing-unit, flying-robot-frame, low-density-structure",
-};
 
 function title(value: string): string {
   return value
@@ -65,10 +45,15 @@ function parseInputs(source: string): MaterialRate[] {
     });
 }
 
+function suggestedInputs(output: string, depth: "direct" | "raw"): string {
+  const materials = depth === "direct" ? directIngredientsFor(output) : boundaryMaterialsFor(output);
+  return materials.join(", ");
+}
+
 export function FactorioBlueprintPage() {
-  const [output, setOutput] = useState<Target>("electronic-circuit");
+  const [output, setOutput] = useState<string>("electronic-circuit");
   const [rate, setRate] = useState(1);
-  const [inputs, setInputs] = useState(RAW_INPUTS[output]);
+  const [inputs, setInputs] = useState(suggestedInputs(output, "raw"));
   const [inputSide, setInputSide] = useState<Side>("west");
   const [outputSide, setOutputSide] = useState<Side>("east");
   const [beltTier, setBeltTier] = useState<BeltTier>("blue");
@@ -96,9 +81,10 @@ export function FactorioBlueprintPage() {
     }
   }, [beltTier, inputSide, inputs, output, outputSide, rate]);
 
-  const chooseTarget = (next: Target) => {
+  const chooseTarget = (next: string) => {
     setOutput(next);
-    setInputs(RAW_INPUTS[next]);
+    const featured = FEATURED_TARGETS.includes(next as typeof FEATURED_TARGETS[number]);
+    setInputs(suggestedInputs(next, featured ? "raw" : "direct"));
     setCopied(false);
   };
 
@@ -143,11 +129,11 @@ export function FactorioBlueprintPage() {
           <h1>Describe the boundary.<br />Get the whole factory.</h1>
           <div className="factorio-hero__copy">
             <p>
-              Select a circuit or science pack, list what you will supply on belts and pipes,
-              and choose the sides. The planner builds every missing intermediate and returns
-              one Factorio-ready blueprint string.
+              Select one of 111 circuit, science, logistics, military, rail, robot, module,
+              armor, or equipment outputs. List what you will supply on belts and pipes; the
+              planner builds every missing intermediate and returns one Factorio-ready string.
             </p>
-            <span>No refinery · no rocket · no modules · no beacons</span>
+            <span>Vanilla 2.0 · no refinery processing · no rocket · no modules in machines · no beacons</span>
           </div>
         </header>
 
@@ -160,13 +146,15 @@ export function FactorioBlueprintPage() {
 
             <label>
               Output
-              <select value={output} onChange={(event) => chooseTarget(event.target.value as Target)}>
-                <optgroup label="Circuits">
-                  {TARGETS.slice(0, 3).map((target) => <option key={target} value={target}>{title(target)}</option>)}
+              <select value={output} onChange={(event) => chooseTarget(event.target.value)}>
+                <optgroup label="Circuits & science">
+                  {FEATURED_TARGETS.map((target) => <option key={target} value={target}>{title(target)}</option>)}
                 </optgroup>
-                <optgroup label="Science packs">
-                  {TARGETS.slice(3).map((target) => <option key={target} value={target}>{title(target)}</option>)}
-                </optgroup>
+                {PRODUCT_GROUPS.map((group) => (
+                  <optgroup key={group.id} label={group.label}>
+                    {group.products.map((target) => <option key={target} value={target}>{title(target)}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
 
@@ -194,8 +182,8 @@ export function FactorioBlueprintPage() {
               />
             </label>
             <div className="factorio-presets" aria-label="Input presets">
-              <button type="button" onClick={() => setInputs(RAW_INPUTS[output])}>Raw + fluids</button>
-              <button type="button" onClick={() => setInputs(COMPONENT_INPUTS[output])}>Components</button>
+              <button type="button" onClick={() => setInputs(suggestedInputs(output, "direct"))}>Direct components</button>
+              <button type="button" onClick={() => setInputs(suggestedInputs(output, "raw"))}>Raw + simple fluids</button>
             </div>
             <p className="factorio-help">
               Comma-separated. Add a cap with <code>=</code>, for example <code>copper-ore=30</code>.
@@ -278,9 +266,8 @@ export function FactorioBlueprintPage() {
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <p className="factorio-proof">
-                  The underlying generator was exercised headlessly in Factorio: 9/9 recursive
-                  circuit and science factories imported, placed, powered, and sustained their
-                  promised output after warm-up.
+                  Verified headlessly in Factorio 2.0.77: all 102 manufactured-product cases plus
+                  the recursive circuit/science suite imported, placed, powered, and produced.
                 </p>
               </>
             )}
