@@ -148,7 +148,7 @@ export interface GeneratedChainBlueprint {
   outputPort: ChainPort;
   itemCost: Record<string, number>;
   spatialOptimization?: {
-    strategy: "anonymous-graph-compiler-v3";
+    strategy: "anonymous-geometry-compiler-v3";
     policy: string;
     candidatesAccepted: number;
     width: number;

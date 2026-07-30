@@ -10,13 +10,11 @@ import {
   type PhysicalIngredientFlow,
   type ProductionBlockContract,
 } from "./optimizer";
-import { buildAnonymousGraphLayout } from "./anonymous-graph-layout";
 import { buildAnonymousCellLayout } from "./motif-layout";
 import type { ChainPlan, ChainEntityRole, MaterialType } from "./types";
 
 export type SpatialLayoutPolicyId =
   | "anonymous-cell"
-  | "anonymous-graph"
   | "micro"
   | "dense"
   | "compact"
@@ -51,7 +49,7 @@ interface PlacedBlock {
 }
 
 export interface SpatialLayoutPolicy {
-  id: Exclude<SpatialLayoutPolicyId, "anonymous-cell" | "anonymous-graph">;
+  id: Exclude<SpatialLayoutPolicyId, "anonymous-cell">;
   busPitch: number;
   busToMachineGap: number;
   trackPitch: number;
@@ -1807,17 +1805,6 @@ export function buildSpatialLayoutCandidates(
   } catch (error) {
     errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
   }
-  try {
-    const anonymousLayout = buildAnonymousGraphLayout(plan, inputSide, outputSide, beltTier);
-    if (anonymousLayout) {
-      assertCollisionFreeCandidate(anonymousLayout);
-      assertUndergroundPairing(anonymousLayout);
-      assertMaterialIsolation(anonymousLayout);
-      candidates.push({ layout: anonymousLayout, metrics: measureSpatialLayout(anonymousLayout, "anonymous-graph") });
-    }
-  } catch (error) {
-    errors.push(`anonymous-graph: ${error instanceof Error ? error.message : String(error)}`);
-  }
   for (const policy of SPATIAL_LAYOUT_POLICIES) {
     try {
       const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
@@ -1853,17 +1840,6 @@ export function diagnoseSpatialLayoutPolicies(
     }
   } catch (error) {
     diagnostics.push({ policy: "anonymous-cell", error: error instanceof Error ? error.message : String(error) });
-  }
-  try {
-    const anonymousLayout = buildAnonymousGraphLayout(plan, inputSide, outputSide, beltTier);
-    if (anonymousLayout) {
-      assertCollisionFreeCandidate(anonymousLayout);
-      assertUndergroundPairing(anonymousLayout);
-      assertMaterialIsolation(anonymousLayout);
-      diagnostics.push({ policy: "anonymous-graph", metrics: measureSpatialLayout(anonymousLayout, "anonymous-graph") });
-    }
-  } catch (error) {
-    diagnostics.push({ policy: "anonymous-graph", error: error instanceof Error ? error.message : String(error) });
   }
   diagnostics.push(...SPATIAL_LAYOUT_POLICIES.map((policy) => {
     try {
