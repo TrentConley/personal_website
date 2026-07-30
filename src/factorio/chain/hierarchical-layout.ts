@@ -220,6 +220,7 @@ function buildOneInputSourcePanel(
   planned: PlannedRecipe,
   beltName: string,
   _splitterName: string,
+  requestedRows?: number,
 ): SourcePanel | undefined {
   if (planned.recipe.ingredients.length !== 1 || planned.recipe.ingredients[0].type !== "item" ||
     planned.materialType !== "item") return undefined;
@@ -227,7 +228,8 @@ function buildOneInputSourcePanel(
   // output belt, while neighboring pairs share an input belt. This is the same
   // dense furnace/assembler grid principle used in hand-built smelting blocks,
   // generalized from entity geometry rather than a recipe name.
-  const rows = Math.min(8, planned.machineCount);
+  const rows = requestedRows ?? Math.min(8, planned.machineCount);
+  if (rows < 1 || rows > Math.min(8, planned.machineCount)) return undefined;
   const rowMachines = distributeMachines(planned.machineCount, rows);
   const rowYs = Array.from({ length: rows }, (_, row) => 3 + row * 6);
   const maximumMachines = Math.max(...rowMachines);
@@ -325,6 +327,11 @@ function buildOneInputSourcePanel(
   });
   if (pairRows.length === 1) {
     const outputY = pairRows[0];
+    const outputCorner = drafts.find((draft) =>
+      draft.role === "output-belt" && draft.material === planned.material &&
+      Math.floor(draft.position.x) === outputColumns[0] && Math.floor(draft.position.y) === outputY);
+    if (!outputCorner) throw new Error(`Missing single-pair output corner for ${planned.material}.`);
+    outputCorner.direction = 12;
     for (let x = outputColumns[0] - 1; x >= outputColumns[0] - 5; x -= 1) {
       drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(x, outputY), direction: 12 });
     }
@@ -656,6 +663,467 @@ function translateSourcePanel(
   };
 }
 
+interface PackedPanelGeometry {
+  planned: PlannedRecipe;
+  panel: SourcePanel;
+  occupiedTiles: Array<{ x: number; y: number }>;
+  minimumX: number;
+  maximumX: number;
+  minimumY: number;
+  maximumY: number;
+}
+
+interface PackedPanelPlacement {
+  geometry: PackedPanelGeometry;
+  translateX: number;
+  translateY: number;
+}
+
+interface PanelPackingState {
+  occupancy: Set<string>;
+  placements: PackedPanelPlacement[];
+  minimumX: number;
+  maximumX: number;
+  minimumY: number;
+  maximumY: number;
+  score: number;
+}
+
+function occupiedDraftTiles(draft: Draft): Array<{ x: number; y: number }> {
+  const half = draftHalfSize(draft);
+  const tiles: Array<{ x: number; y: number }> = [];
+  for (let x = Math.floor(draft.position.x - half.x); x <= Math.floor(draft.position.x + half.x); x += 1) {
+    for (let y = Math.floor(draft.position.y - half.y); y <= Math.floor(draft.position.y + half.y); y += 1) {
+      tiles.push({ x, y });
+    }
+  }
+  return tiles;
+}
+
+function geometryForPanel(planned: PlannedRecipe, panel: SourcePanel): PackedPanelGeometry {
+  const byKey = new Map<string, { x: number; y: number }>();
+  panel.drafts.flatMap(occupiedDraftTiles).forEach((tile) => byKey.set(`${tile.x},${tile.y}`, tile));
+  const occupiedTiles = [...byKey.values()];
+  return {
+    planned,
+    panel,
+    occupiedTiles,
+    minimumX: Math.min(...occupiedTiles.map((tile) => tile.x)),
+    maximumX: Math.max(...occupiedTiles.map((tile) => tile.x)),
+    minimumY: Math.min(...occupiedTiles.map((tile) => tile.y)),
+    maximumY: Math.max(...occupiedTiles.map((tile) => tile.y)),
+  };
+}
+
+function panelPlacementCandidates(
+  state: PanelPackingState,
+  geometry: PackedPanelGeometry,
+  virtualPort: { x: number; y: number },
+  limit: number,
+): PanelPackingState[] {
+  const candidates: Array<{ translateX: number; translateY: number; score: number;
+    minimumX: number; maximumX: number; minimumY: number; maximumY: number }> = [];
+  const minimumTranslateX = state.minimumX - geometry.maximumX - 2;
+  const maximumTranslateX = state.maximumX - geometry.minimumX + 2;
+  const minimumTranslateY = state.minimumY - geometry.maximumY - 2;
+  const maximumTranslateY = state.maximumY - geometry.minimumY + 2;
+  const localOutput = floorPosition(geometry.panel.outputPosition);
+  const outputStep = geometry.panel.outputDirection === 12 ? -1 : 1;
+  for (let translateX = minimumTranslateX; translateX <= maximumTranslateX; translateX += 1) {
+    for (let translateY = minimumTranslateY; translateY <= maximumTranslateY; translateY += 1) {
+      const panelMinimumX = geometry.minimumX + translateX;
+      const panelMaximumX = geometry.maximumX + translateX;
+      const panelMinimumY = geometry.minimumY + translateY;
+      const panelMaximumY = geometry.maximumY + translateY;
+      const minimumX = Math.min(state.minimumX, panelMinimumX);
+      const maximumX = Math.max(state.maximumX, panelMaximumX);
+      const minimumY = Math.min(state.minimumY, panelMinimumY);
+      const maximumY = Math.max(state.maximumY, panelMaximumY);
+      const width = maximumX - minimumX + 1;
+      const height = maximumY - minimumY + 1;
+      const outputX = localOutput.x + translateX;
+      const outputY = localOutput.y + translateY;
+      const distance = Math.abs(outputX - virtualPort.x) + Math.abs(outputY - virtualPort.y);
+      const edgeDistance = geometry.panel.inputPositions.size === 0 ? 0 : Math.min(
+        ...[...geometry.panel.inputPositions.values()].map((position) =>
+          Math.max(0, floorPosition(position).x + translateX - minimumX)),
+      );
+      candidates.push({
+        translateX,
+        translateY,
+        minimumX,
+        maximumX,
+        minimumY,
+        maximumY,
+        score: width * height * 100 + Math.max(width, height) * 18 + distance * 7 + edgeDistance * 2,
+      });
+    }
+  }
+  candidates.sort((left, right) => left.score - right.score ||
+    left.translateY - right.translateY || left.translateX - right.translateX);
+  const accepted: PanelPackingState[] = [];
+  for (const candidate of candidates) {
+    if (accepted.length >= limit) break;
+    const outputX = localOutput.x + candidate.translateX + outputStep;
+    const outputY = localOutput.y + candidate.translateY;
+    if (state.occupancy.has(`${outputX},${outputY}`)) continue;
+    let collision = false;
+    const outsideExistingBounds =
+      candidate.maximumX < state.minimumX - 1 || candidate.minimumX > state.maximumX + 1 ||
+      candidate.maximumY < state.minimumY - 1 || candidate.minimumY > state.maximumY + 1;
+    if (!outsideExistingBounds) {
+      collision = geometry.occupiedTiles.some((tile) => {
+        const x = tile.x + candidate.translateX;
+        const y = tile.y + candidate.translateY;
+        return state.occupancy.has(`${x},${y}`) || state.occupancy.has(`${x - 1},${y}`) ||
+          state.occupancy.has(`${x + 1},${y}`) || state.occupancy.has(`${x},${y - 1}`) ||
+          state.occupancy.has(`${x},${y + 1}`);
+      });
+    }
+    if (collision) continue;
+    const occupancy = new Set(state.occupancy);
+    geometry.occupiedTiles.forEach((tile) =>
+      occupancy.add(`${tile.x + candidate.translateX},${tile.y + candidate.translateY}`));
+    accepted.push({
+      occupancy,
+      placements: [...state.placements, {
+        geometry,
+        translateX: candidate.translateX,
+        translateY: candidate.translateY,
+      }],
+      minimumX: candidate.minimumX,
+      maximumX: candidate.maximumX,
+      minimumY: candidate.minimumY,
+      maximumY: candidate.maximumY,
+      score: candidate.score,
+    });
+  }
+  return accepted;
+}
+
+function searchPanelPackings(
+  drafts: Draft[],
+  panelGroups: Array<{ planned: PlannedRecipe; panels: SourcePanel[] }>,
+  virtualPorts: Map<string, { x: number; y: number }>,
+  reservedTiles: Set<string> = new Set(),
+): PanelPackingState[] {
+  const occupancy = new Set<string>();
+  drafts.flatMap(occupiedDraftTiles).forEach((tile) => occupancy.add(`${tile.x},${tile.y}`));
+  const occupied = [...occupancy].map((key) => {
+    const [x, y] = key.split(",").map(Number);
+    return { x, y };
+  });
+  reservedTiles.forEach((tile) => occupancy.add(tile));
+  let states: PanelPackingState[] = [{
+    occupancy,
+    placements: [],
+    minimumX: Math.min(...occupied.map((tile) => tile.x)),
+    maximumX: Math.max(...occupied.map((tile) => tile.x)),
+    minimumY: Math.min(...occupied.map((tile) => tile.y)),
+    maximumY: Math.max(...occupied.map((tile) => tile.y)),
+    score: 0,
+  }];
+  const groups = panelGroups.map(({ planned, panels }) => ({
+    planned,
+    geometries: panels.map((panel) => geometryForPanel(planned, panel)),
+  })).sort((left, right) => right.planned.machineCount - left.planned.machineCount ||
+    left.planned.material.localeCompare(right.planned.material));
+  for (const group of groups) {
+    const virtualPort = virtualPorts.get(group.planned.material);
+    if (!virtualPort) throw new Error(`Missing virtual leaf port for ${group.planned.material}.`);
+    states = states.flatMap((state) => group.geometries.flatMap((geometry) =>
+      panelPlacementCandidates(state, geometry, virtualPort, 4)))
+      .sort((left, right) => left.score - right.score)
+      .slice(0, 20);
+    if (states.length === 0) throw new Error(`No collision-free panel placement exists for ${group.planned.material}.`);
+  }
+  return states;
+}
+
+function directionVector(direction: CardinalDirection): { x: number; y: number } {
+  if (direction === 0) return { x: 0, y: -1 };
+  if (direction === 4) return { x: 1, y: 0 };
+  if (direction === 8) return { x: 0, y: 1 };
+  return { x: -1, y: 0 };
+}
+
+function undergroundEndpointReach(name: string): number {
+  if (name === "underground-belt") return 6;
+  if (name === "fast-underground-belt") return 8;
+  return 10;
+}
+
+/**
+ * Underground belts may cross at right angles, and different tiers may weave,
+ * but two tunnels of the same tier cannot occupy the same collinear span. The
+ * surface occupancy grid does not describe that hidden constraint, so expose
+ * each already-paired tunnel as axis-qualified underground tiles for routing.
+ */
+function occupiedUndergroundTunnelTiles(drafts: Draft[]): Set<string> {
+  const endpoints = drafts.filter((draft) => draft.undergroundType !== undefined && draft.direction !== undefined);
+  const occupied = new Set<string>();
+  for (const input of endpoints.filter((draft) => draft.undergroundType === "input")) {
+    const vector = directionVector(input.direction!);
+    const candidates = endpoints.filter((output) => {
+      if (output.undergroundType !== "output" || output.name !== input.name ||
+        output.direction !== input.direction) return false;
+      const deltaX = Math.floor(output.position.x) - Math.floor(input.position.x);
+      const deltaY = Math.floor(output.position.y) - Math.floor(input.position.y);
+      const projection = deltaX * vector.x + deltaY * vector.y;
+      const perpendicular = deltaX * vector.y - deltaY * vector.x;
+      return perpendicular === 0 && projection > 0 && projection <= undergroundEndpointReach(input.name);
+    }).sort((left, right) =>
+      Math.abs(left.position.x - input.position.x) + Math.abs(left.position.y - input.position.y) -
+      Math.abs(right.position.x - input.position.x) - Math.abs(right.position.y - input.position.y));
+    const output = candidates[0];
+    if (!output) continue;
+    const inputTile = floorPosition(input.position);
+    const outputTile = floorPosition(output.position);
+    const axis = vector.x === 0 ? "v" : "h";
+    const fixed = vector.x === 0 ? inputTile.x : inputTile.y;
+    const minimum = vector.x === 0
+      ? Math.min(inputTile.y, outputTile.y)
+      : Math.min(inputTile.x, outputTile.x);
+    const maximum = vector.x === 0
+      ? Math.max(inputTile.y, outputTile.y)
+      : Math.max(inputTile.x, outputTile.x);
+    for (let coordinate = minimum; coordinate <= maximum; coordinate += 1) {
+      occupied.add(`${input.name}:${axis}:${fixed}:${coordinate}`);
+    }
+  }
+  return occupied;
+}
+
+function routePanelOutput(
+  drafts: Draft[],
+  material: string,
+  outputPosition: { x: number; y: number },
+  outputDirection: CardinalDirection,
+  inputPosition: { x: number; y: number },
+  beltName: string,
+  reservedIngressTiles: Set<string>,
+): boolean {
+  const occupancy = new Set<string>();
+  drafts.flatMap(occupiedDraftTiles).forEach((tile) => occupancy.add(`${tile.x},${tile.y}`));
+  const incomingFeedForbidden = new Set<string>();
+  drafts.filter((draft) =>
+    draft.undergroundType !== "input" && draft.direction !== undefined &&
+    (draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+      draft.name.includes("splitter")))
+    .forEach((draft) => {
+      const vector = directionVector(draft.direction!);
+      occupiedDraftTiles(draft).forEach((tile) =>
+        incomingFeedForbidden.add(`${tile.x + vector.x},${tile.y + vector.y}`));
+    });
+  const output = floorPosition(outputPosition);
+  const input = floorPosition(inputPosition);
+  const inputDraft = drafts.find((draft) =>
+    draft.material === material && draft.direction !== undefined &&
+    Math.floor(draft.position.x) === input.x && Math.floor(draft.position.y) === input.y &&
+    (draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+      draft.name.includes("splitter")));
+  if (!inputDraft || inputDraft.direction === undefined) return false;
+  const inputDirection = inputDraft.direction;
+  const inputVector = directionVector(inputDirection);
+  const goal = { x: input.x - inputVector.x, y: input.y - inputVector.y };
+  const initialVector = directionVector(outputDirection);
+  const start = { x: output.x + initialVector.x, y: output.y + initialVector.y, direction: outputDirection };
+  // The source output is expected to feed the first route tile; every other
+  // pre-existing transport edge remains forbidden to prevent accidental
+  // same-material T-junctions and loops.
+  incomingFeedForbidden.delete(`${start.x},${start.y}`);
+  if (occupancy.has(`${start.x},${start.y}`) || occupancy.has(`${goal.x},${goal.y}`)) return false;
+  const occupied = [...occupancy].map((key) => {
+    const [x, y] = key.split(",").map(Number);
+    return { x, y };
+  });
+  const undergroundName = beltName === "transport-belt"
+    ? "underground-belt"
+    : beltName === "fast-transport-belt"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+  const undergroundTunnelTiles = occupiedUndergroundTunnelTiles(drafts);
+  const padding = 8;
+  const minimumX = Math.min(start.x, goal.x, ...occupied.map((tile) => tile.x)) - padding;
+  const maximumX = Math.max(start.x, goal.x, ...occupied.map((tile) => tile.x)) + padding;
+  const minimumY = Math.min(start.y, goal.y, ...occupied.map((tile) => tile.y)) - padding;
+  const maximumY = Math.max(start.y, goal.y, ...occupied.map((tile) => tile.y)) + padding;
+  interface SearchNode {
+    x: number;
+    y: number;
+    direction: CardinalDirection;
+    arrivedUnderground: boolean;
+    cost: number;
+    estimate: number;
+    key: string;
+  }
+  const nodes: SearchNode[] = [];
+  const push = (node: SearchNode): void => {
+    nodes.push(node);
+    let index = nodes.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (nodes[parent].estimate <= node.estimate) break;
+      nodes[index] = nodes[parent];
+      index = parent;
+    }
+    nodes[index] = node;
+  };
+  const pop = (): SearchNode | undefined => {
+    if (nodes.length === 0) return undefined;
+    const first = nodes[0];
+    const last = nodes.pop()!;
+    if (nodes.length > 0) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        if (left >= nodes.length) break;
+        const right = left + 1;
+        const child = right < nodes.length && nodes[right].estimate < nodes[left].estimate ? right : left;
+        if (nodes[child].estimate >= last.estimate) break;
+        nodes[index] = nodes[child];
+        index = child;
+      }
+      nodes[index] = last;
+    }
+    return first;
+  };
+  const keyFor = (x: number, y: number, direction: CardinalDirection, arrivedUnderground: boolean): string =>
+    `${x},${y},${direction},${arrivedUnderground ? 1 : 0}`;
+  const heuristic = (x: number, y: number): number => Math.abs(x - goal.x) + Math.abs(y - goal.y);
+  const startKey = keyFor(start.x, start.y, start.direction, false);
+  const best = new Map([[startKey, 0]]);
+  const previous = new Map<string, string>();
+  const pointByKey = new Map([[startKey, { ...start, arrivedUnderground: false }]]);
+  push({ ...start, arrivedUnderground: false, cost: 0, estimate: heuristic(start.x, start.y), key: startKey });
+  const directions: CardinalDirection[] = [0, 4, 8, 12];
+  let goalKey: string | undefined;
+  while (nodes.length > 0) {
+    const current = pop()!;
+    if (current.cost !== best.get(current.key)) continue;
+    if (current.x === goal.x && current.y === goal.y) {
+      if (!current.arrivedUnderground || inputDirection === current.direction) {
+        goalKey = current.key;
+        break;
+      }
+    }
+    for (const direction of directions) {
+      if ((direction + 8) % 16 === current.direction) continue;
+      const vector = directionVector(direction);
+      const x = current.x + vector.x;
+      const y = current.y + vector.y;
+      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+      if (reservedIngressTiles.has(`${x},${y}`) && (x !== goal.x || y !== goal.y)) continue;
+      if (!occupancy.has(`${x},${y}`) && !incomingFeedForbidden.has(`${x},${y}`)) {
+        if (current.arrivedUnderground && direction !== current.direction) continue;
+        const key = keyFor(x, y, direction, false);
+        const cost = current.cost + 1 + (direction === current.direction ? 0 : 0.2);
+        if (cost >= (best.get(key) ?? Number.POSITIVE_INFINITY)) continue;
+        best.set(key, cost);
+        previous.set(key, current.key);
+        pointByKey.set(key, { x, y, direction, arrivedUnderground: false });
+        push({ x, y, direction, arrivedUnderground: false, cost, estimate: cost + heuristic(x, y), key });
+        continue;
+      }
+      // A belt can cross a congested channel by turning the current free tile
+      // into an underground entrance and landing on the first viable tile up
+      // to the tier's reach. Entrances cannot turn, and an underground output
+      // cannot also be reused as another entrance on the same tile.
+      if (current.arrivedUnderground || direction !== current.direction) continue;
+      for (let distance = 2; distance <= undergroundEndpointReach(undergroundName); distance += 1) {
+        const exitX = current.x + vector.x * distance;
+        const exitY = current.y + vector.y * distance;
+        if (exitX < minimumX || exitX > maximumX || exitY < minimumY || exitY > maximumY) break;
+        if (reservedIngressTiles.has(`${exitX},${exitY}`) && (exitX !== goal.x || exitY !== goal.y)) continue;
+        if (occupancy.has(`${exitX},${exitY}`) || incomingFeedForbidden.has(`${exitX},${exitY}`)) continue;
+        const axis = vector.x === 0 ? "v" : "h";
+        const fixed = vector.x === 0 ? current.x : current.y;
+        let overlapsTunnel = false;
+        for (let undergroundStep = 0; undergroundStep <= distance; undergroundStep += 1) {
+          const coordinate = vector.x === 0
+            ? current.y + vector.y * undergroundStep
+            : current.x + vector.x * undergroundStep;
+          if (undergroundTunnelTiles.has(`${undergroundName}:${axis}:${fixed}:${coordinate}`)) {
+            overlapsTunnel = true;
+            break;
+          }
+        }
+        if (overlapsTunnel) break;
+        const key = keyFor(exitX, exitY, direction, true);
+        const cost = current.cost + distance + 2.5;
+        if (cost >= (best.get(key) ?? Number.POSITIVE_INFINITY)) break;
+        best.set(key, cost);
+        previous.set(key, current.key);
+        pointByKey.set(key, { x: exitX, y: exitY, direction, arrivedUnderground: true });
+        push({
+          x: exitX,
+          y: exitY,
+          direction,
+          arrivedUnderground: true,
+          cost,
+          estimate: cost + heuristic(exitX, exitY),
+          key,
+        });
+        break;
+      }
+    }
+  }
+  if (!goalKey) return false;
+  const path: Array<{ x: number; y: number; direction: CardinalDirection; arrivedUnderground: boolean }> = [];
+  let key: string | undefined = goalKey;
+  while (key) {
+    const point = pointByKey.get(key)!;
+    path.push(point);
+    key = previous.get(key);
+  }
+  path.reverse();
+  const finalDirection = inputDirection;
+  path.forEach((point, index) => {
+    const previousPoint = index > 0 ? path[index - 1] : undefined;
+    const nextPoint = path[index + 1];
+    const jumpIn = previousPoint !== undefined &&
+      Math.abs(previousPoint.x - point.x) + Math.abs(previousPoint.y - point.y) > 1;
+    const jumpOut = nextPoint !== undefined &&
+      Math.abs(nextPoint.x - point.x) + Math.abs(nextPoint.y - point.y) > 1;
+    const direction = jumpOut
+      ? point.direction
+      : jumpIn
+      ? previousPoint!.direction
+      : nextPoint
+        ? directionBetween(point, nextPoint)
+        : finalDirection;
+    drafts.push({
+      role: jumpIn || jumpOut ? "underground-belt" : "material-bus",
+      material,
+      name: jumpIn || jumpOut ? undergroundName : beltName,
+      position: tilePosition(point.x, point.y),
+      direction,
+      undergroundType: jumpOut ? "input" : jumpIn ? "output" : undefined,
+    });
+  });
+  return true;
+}
+
+function crossMaterialTransportFeed(drafts: Draft[]): string | undefined {
+  const transports = drafts.filter((draft) =>
+    draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+    draft.name.includes("splitter"));
+  const byTile = new Map<string, Draft>();
+  transports.forEach((draft) => occupiedDraftTiles(draft).forEach((tile) =>
+    byTile.set(`${tile.x},${tile.y}`, draft)));
+  for (const draft of transports) {
+    if (draft.undergroundType === "input" || draft.direction === undefined) continue;
+    const vector = directionVector(draft.direction);
+    for (const tile of occupiedDraftTiles(draft)) {
+      const next = byTile.get(`${tile.x + vector.x},${tile.y + vector.y}`);
+      if (next !== undefined && next.material !== draft.material) {
+        return `${draft.material} at ${draft.position.x},${draft.position.y} feeds ${next.material} at ${next.position.x},${next.position.y}`;
+      }
+    }
+  }
+  return undefined;
+}
+
 function connectPanelToVirtualPort(
   drafts: Draft[],
   material: string,
@@ -911,16 +1379,16 @@ function routeCanonicalOutput(
   if (side === "east") return start;
   const minimumX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x))) - 6;
   const minimumY = Math.floor(Math.min(...drafts.map((draft) => draft.position.y - draftHalfSize(draft).y))) - 6;
+  const maximumX = Math.ceil(Math.max(...drafts.map((draft) => draft.position.x + draftHalfSize(draft).x))) + 3;
   const maximumY = Math.ceil(Math.max(...drafts.map((draft) => draft.position.y + draftHalfSize(draft).y))) + 6;
-  const outsideX = start.x + 3;
-  const path: Array<{ x: number; y: number }> = [
-    { x: start.x + 1, y: start.y },
-    { x: start.x + 2, y: start.y },
-    { x: outsideX, y: start.y },
-  ];
+  const outsideX = maximumX;
+  const path: Array<{ x: number; y: number }> = Array.from(
+    { length: outsideX - start.x },
+    (_, index) => ({ x: start.x + index + 1, y: start.y }),
+  );
   if (side === "north") {
     for (let y = start.y - 1; y >= minimumY; y -= 1) path.push({ x: outsideX, y });
-  } else {
+  } else if (side === "south" || side === "west") {
     for (let y = start.y + 1; y <= maximumY; y += 1) path.push({ x: outsideX, y });
     if (side === "west") {
       for (let x = outsideX - 1; x >= minimumX; x -= 1) path.push({ x, y: maximumY });
@@ -932,7 +1400,7 @@ function routeCanonicalOutput(
     material,
     beltName,
     path,
-    side === "north" ? 0 : side === "south" ? 8 : 12,
+    side === "north" ? 0 : side === "south" ? 8 : side === "west" ? 12 : 4,
   );
   return path.at(-1)!;
 }
@@ -1818,96 +2286,108 @@ export function buildHierarchicalLayout(
     terminal.fluidPorts.map((port) => port.y),
     [...requiredSolidBoundaries],
   );
-
-  const compiledPanels = upstreamLeaves.map((planned) => {
-    const panel = buildOneInputSourcePanel(planned!, belt.entityName, belt.splitterEntityName) ??
-      buildItemFluidSourcePanel(planned!, belt.entityName);
-    if (!panel) throw new Error(`No compact source-panel primitive matches ${planned!.recipe.id}.`);
-    return { planned: planned!, panel };
-  });
-  const virtualBusRows = [...requiredSolidBoundaries].map((material) =>
-    Math.floor(inputPositions.get(material)!.y));
-  const placedPanelBounds: Array<{ minimumX: number; maximumX: number; minimumY: number; maximumY: number }> = [];
-  const placedPanelConnections: Array<{
-    planned: PlannedRecipe;
-    panel: SourcePanel;
-    placed: { inputs: Map<string, { x: number; y: number }>; output: { x: number; y: number } };
-    virtualPort: { x: number; y: number };
-  }> = [];
-  const coreMinimumX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
-  const coreMaximumX = Math.ceil(Math.max(...drafts.map((draft) => draft.position.x + draftHalfSize(draft).x)));
-  const coreMinimumY = Math.floor(Math.min(...drafts.map((draft) => draft.position.y - draftHalfSize(draft).y)));
-  const targetShelfWidth = coreMaximumX - coreMinimumX;
-  const panelGeometry = compiledPanels.map(({ planned, panel }) => {
-    const minimumX = Math.floor(Math.min(...panel.drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
-    const maximumX = Math.ceil(Math.max(...panel.drafts.map((draft) => draft.position.x + draftHalfSize(draft).x)));
-    const minimumY = Math.floor(Math.min(...panel.drafts.map((draft) => draft.position.y - draftHalfSize(draft).y)));
-    const maximumY = Math.ceil(Math.max(...panel.drafts.map((draft) => draft.position.y + draftHalfSize(draft).y)));
-    return { planned, panel, minimumX, maximumX, minimumY, maximumY, width: maximumX - minimumX, height: maximumY - minimumY };
-  }).sort((left, right) => right.height - left.height || right.width - left.width || left.planned.material.localeCompare(right.planned.material));
-  const shelves: Array<{ width: number; height: number; panels: typeof panelGeometry }> = [];
-  panelGeometry.forEach((geometry) => {
-    const shelf = shelves.find((candidate) => candidate.width + (candidate.panels.length > 0 ? 3 : 0) + geometry.width <= targetShelfWidth);
-    if (shelf) {
-      shelf.width += (shelf.panels.length > 0 ? 3 : 0) + geometry.width;
-      shelf.height = Math.max(shelf.height, geometry.height);
-      shelf.panels.push(geometry);
-    } else {
-      shelves.push({ width: geometry.width, height: geometry.height, panels: [geometry] });
-    }
-  });
-  let shelfBottomY = coreMinimumY - 3;
-  shelves.forEach((shelf) => {
-    const shelfTopY = shelfBottomY - shelf.height;
-    let shelfX = coreMinimumX;
-    shelf.panels.forEach((geometry) => {
-      const { planned, panel } = geometry;
-    const virtualPort = inputPositions.get(planned.material);
-    if (!virtualPort) throw new Error(`Missing virtual leaf port for ${planned.material}.`);
-      const translateX = shelfX - geometry.minimumX;
-      const translateY = shelfTopY - geometry.minimumY;
-    const placed = translateSourcePanel(drafts, panel, translateX, translateY);
-    placedPanelBounds.push({
-        minimumX: geometry.minimumX + translateX,
-        maximumX: geometry.maximumX + translateX,
-        minimumY: geometry.minimumY + translateY,
-        maximumY: geometry.maximumY + translateY,
-    });
-    placedPanelConnections.push({ planned, panel, placed, virtualPort });
-    inputPositions.delete(planned.material);
-    placed.inputs.forEach((position, material) => inputPositions.set(material, position));
-      shelfX += geometry.width + 3;
-    });
-    shelfBottomY = shelfTopY - 3;
-  });
-  const corridorTopY = Math.min(...placedPanelBounds.map((bounds) => bounds.minimumY)) - 4;
-  const sourceApproachRows = placedPanelConnections.map((_, index) => corridorTopY - index * 2);
-  const escapeColumns = placedPanelConnections.map(({ panel, placed }) =>
-    Math.floor(placed.output.x) + (panel.outputDirection === 12 ? -1 : 1));
-  const minimumOccupiedX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
-  const outerColumns = placedPanelConnections.map((_, index) => minimumOccupiedX - 5 - index * 3);
-  placedPanelConnections.forEach(({ planned, panel, placed, virtualPort }, panelIndex) => {
-    connectShelfPanelToVirtualPort(
-      drafts,
-      planned.material,
-      placed.output,
-      panel.outputDirection,
-      virtualPort,
-      belt.entityName,
-      sourceApproachRows[panelIndex],
-      outerColumns[panelIndex],
-      [...virtualBusRows, ...sourceApproachRows],
-      escapeColumns,
-      outerColumns,
-      undergroundName,
-    );
-  });
+  // Reserve final fluid ingress before floorplanning and routing solid source
+  // panels so the pathfinder treats the pipe corridor as occupied geometry.
   terminal.fluidPorts.forEach((port) => {
     inputPositions.set(port.material, tilePosition(-18, port.y));
     addPumpFreeHorizontalPipe(drafts, port.material, -18, port.x - 1, port.y);
   });
-  connectPowerComponents(drafts);
+  const terminalOutputTile = floorPosition(terminal.outputPosition);
+  const outputEscapeMaximumX = terminalOutputTile.x + 128 +
+    upstreamLeaves.reduce((sum, planned) => sum + planned!.machineCount * 4, 0);
+  const outputEscapeTiles = new Set<string>();
+  for (let x = terminalOutputTile.x + 1; x <= outputEscapeMaximumX; x += 1) {
+    outputEscapeTiles.add(`${x},${terminalOutputTile.y}`);
+  }
 
+  const compiledPanels = upstreamLeaves.map((planned) => {
+    const maximumRows = Math.min(8, planned!.machineCount);
+    const minimumRows = 1;
+    const oneInputPanels = Array.from({ length: maximumRows - minimumRows + 1 }, (_, index) => minimumRows + index)
+      .filter((rows) => {
+        const outputBranches = Math.ceil(rows / 2);
+        return (outputBranches & (outputBranches - 1)) === 0;
+      })
+      .map((rows) => buildOneInputSourcePanel(planned!, belt.entityName, belt.splitterEntityName, rows))
+      .filter((panel): panel is SourcePanel => panel !== undefined);
+    const fluidPanel = buildItemFluidSourcePanel(planned!, belt.entityName);
+    const panels = oneInputPanels.length > 0 ? oneInputPanels : fluidPanel ? [fluidPanel] : [];
+    if (panels.length === 0) throw new Error(`No compact source-panel primitive matches ${planned!.recipe.id}.`);
+    return { planned: planned!, panels };
+  });
+  const packingStates = searchPanelPackings(drafts, compiledPanels, inputPositions, outputEscapeTiles);
+  let packedDrafts: Draft[] | undefined;
+  let packedInputs: Map<string, { x: number; y: number }> | undefined;
+  let routeFailures = 0;
+  let isolationFailures = 0;
+  let powerFailures = 0;
+  let firstIsolationFailure: string | undefined;
+  for (const state of packingStates) {
+    const trialDrafts = [...drafts];
+    const trialInputs = new Map(inputPositions);
+    const connections = state.placements.map(({ geometry, translateX, translateY }) => {
+      const virtualPort = trialInputs.get(geometry.planned.material);
+      if (!virtualPort) throw new Error(`Missing virtual leaf port for ${geometry.planned.material}.`);
+      const placed = translateSourcePanel(trialDrafts, geometry.panel, translateX, translateY);
+      trialInputs.delete(geometry.planned.material);
+      placed.inputs.forEach((position, material) => trialInputs.set(material, position));
+      return { geometry, placed, virtualPort };
+    }).sort((left, right) =>
+      Math.abs(floorPosition(left.placed.output).x - floorPosition(left.virtualPort).x) +
+        Math.abs(floorPosition(left.placed.output).y - floorPosition(left.virtualPort).y) -
+      Math.abs(floorPosition(right.placed.output).x - floorPosition(right.virtualPort).x) -
+        Math.abs(floorPosition(right.placed.output).y - floorPosition(right.virtualPort).y));
+    const reservedIngressTiles = new Set(outputEscapeTiles);
+    connections.forEach(({ geometry, virtualPort }) => {
+      const input = floorPosition(virtualPort);
+      const inputDraft = trialDrafts.find((draft) =>
+        draft.material === geometry.planned.material && draft.direction !== undefined &&
+        Math.floor(draft.position.x) === input.x && Math.floor(draft.position.y) === input.y &&
+        (draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+          draft.name.includes("splitter")));
+      if (!inputDraft || inputDraft.direction === undefined) {
+        throw new Error(`Missing typed belt ingress for ${geometry.planned.material}.`);
+      }
+      const vector = directionVector(inputDraft.direction);
+      reservedIngressTiles.add(`${input.x - vector.x},${input.y - vector.y}`);
+    });
+    const routed = connections.every(({ geometry, placed, virtualPort }) => routePanelOutput(
+      trialDrafts,
+      geometry.planned.material,
+      placed.output,
+      geometry.panel.outputDirection,
+      virtualPort,
+      belt.entityName,
+      reservedIngressTiles,
+    ));
+    if (!routed) {
+      routeFailures += 1;
+      continue;
+    }
+    const isolationFailure = crossMaterialTransportFeed(trialDrafts);
+    if (isolationFailure) {
+      isolationFailures += 1;
+      firstIsolationFailure ??= isolationFailure;
+      continue;
+    }
+    try {
+      connectPowerComponents(trialDrafts);
+    } catch {
+      powerFailures += 1;
+      continue;
+    }
+    packedDrafts = trialDrafts;
+    packedInputs = trialInputs;
+    break;
+  }
+  if (!packedDrafts || !packedInputs) throw new Error(
+    `No routable compact source-panel packing was found (${routeFailures} routing, ${isolationFailures} isolation, ` +
+      `${powerFailures} power` +
+      `${firstIsolationFailure ? `; ${firstIsolationFailure}` : ""}).`,
+  );
+  drafts.splice(0, drafts.length, ...packedDrafts);
+  inputPositions.clear();
+  packedInputs.forEach((position, material) => inputPositions.set(material, position));
   const canonicalOutputSide = reflectX
     ? outputSide === "east" ? "west" : outputSide === "west" ? "east" : outputSide
     : INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];

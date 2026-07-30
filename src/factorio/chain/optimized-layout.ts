@@ -1660,6 +1660,7 @@ function assertCollisionFreeCandidate(layout: CanonicalLayout): void {
 function assertUndergroundPairing(layout: CanonicalLayout): void {
   const endpoints = layout.drafts.filter((draft) => draft.undergroundType !== undefined);
   const claimedOutputs = new Set<Draft>();
+  const claimedTunnelTiles = new Map<string, Draft>();
   const directionVector = (direction: CardinalDirection | undefined): { x: number; y: number } => {
     if (direction === 0) return { x: 0, y: -1 };
     if (direction === 4) return { x: 1, y: 0 };
@@ -1697,6 +1698,25 @@ function assertUndergroundPairing(layout: CanonicalLayout): void {
       throw new Error(`Multiple underground inputs would claim the output at ${output.position.x},${output.position.y}.`);
     }
     claimedOutputs.add(output);
+    const inputX = Math.floor(input.position.x);
+    const inputY = Math.floor(input.position.y);
+    const outputX = Math.floor(output.position.x);
+    const outputY = Math.floor(output.position.y);
+    const axis = vector.x === 0 ? "v" : "h";
+    const fixed = vector.x === 0 ? inputX : inputY;
+    const minimum = vector.x === 0 ? Math.min(inputY, outputY) : Math.min(inputX, outputX);
+    const maximum = vector.x === 0 ? Math.max(inputY, outputY) : Math.max(inputX, outputX);
+    for (let coordinate = minimum; coordinate <= maximum; coordinate += 1) {
+      const key = `${input.name}:${axis}:${fixed}:${coordinate}`;
+      const conflict = claimedTunnelTiles.get(key);
+      if (conflict) {
+        throw new Error(
+          `${input.name} tunnel from ${input.position.x},${input.position.y} overlaps the collinear tunnel from ` +
+            `${conflict.position.x},${conflict.position.y}.`,
+        );
+      }
+      claimedTunnelTiles.set(key, input);
+    }
   }
   const outputs = endpoints.filter((draft) => draft.undergroundType === "output");
   if (claimedOutputs.size !== outputs.length) {
