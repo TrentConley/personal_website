@@ -1,0 +1,1951 @@
+import { BELTS } from "../core/throughput";
+import type { CardinalDirection, Side } from "../core/types";
+import {
+  addVerticalBelt,
+  addVerticalPipe,
+  type CanonicalLayout,
+  type Draft,
+} from "./layout";
+import { buildAnonymousCellLayout } from "./motif-layout";
+import type {
+  CatalogAmount,
+  ChainPlan,
+  MaterialType,
+  PlannedInput,
+  PlannedRecipe,
+} from "./types";
+
+const SIDE_INDEX: Record<Side, number> = { north: 0, east: 1, south: 2, west: 3 };
+const INDEX_SIDE: Side[] = ["north", "east", "south", "west"];
+
+interface HierarchicalPattern {
+  source: PlannedRecipe;
+  primary: PlannedRecipe;
+  secondary: PlannedRecipe;
+  terminal: PlannedRecipe;
+  sourceBoundary: CatalogAmount;
+  primaryBoundary: CatalogAmount;
+  secondaryBoundary: CatalogAmount;
+  terminalFluids: CatalogAmount[];
+  primaryForTerminalPerSecond: number;
+  secondaryForTerminalPerSecond: number;
+}
+
+interface Island {
+  layout: CanonicalLayout;
+  x: number;
+  y: number;
+}
+
+interface PortTap {
+  material: string;
+  type: MaterialType;
+  x: number;
+  y: number;
+}
+
+interface SourcePanel {
+  drafts: Draft[];
+  inputPositions: Map<string, { x: number; y: number }>;
+  outputPosition: { x: number; y: number };
+  outputDirection: CardinalDirection;
+}
+
+function tilePosition(x: number, y: number): { x: number; y: number } {
+  return { x: x + 0.5, y: y + 0.5 };
+}
+
+function floorPosition(position: { x: number; y: number }): { x: number; y: number } {
+  return { x: Math.floor(position.x), y: Math.floor(position.y) };
+}
+
+function directionBetween(from: { x: number; y: number }, to: { x: number; y: number }): CardinalDirection {
+  if (to.x === from.x && to.y === from.y - 1) return 0;
+  if (to.x === from.x + 1 && to.y === from.y) return 4;
+  if (to.x === from.x && to.y === from.y + 1) return 8;
+  if (to.x === from.x - 1 && to.y === from.y) return 12;
+  throw new Error("Hierarchical routes must use one-tile cardinal steps.");
+}
+
+function addBeltPath(
+  drafts: Draft[],
+  role: Draft["role"],
+  material: string,
+  beltName: string,
+  path: Array<{ x: number; y: number }>,
+  finalDirection: CardinalDirection,
+): void {
+  path.forEach((point, index) => {
+    drafts.push({
+      role,
+      material,
+      name: beltName,
+      position: tilePosition(point.x, point.y),
+      direction: index + 1 < path.length ? directionBetween(point, path[index + 1]) : finalDirection,
+    });
+  });
+}
+
+function horizontalPoints(fromX: number, toX: number, y: number): Array<{ x: number; y: number }> {
+  if (fromX > toX) return [];
+  return Array.from({ length: toX - fromX + 1 }, (_, index) => ({ x: fromX + index, y }));
+}
+
+function addHorizontalBeltCrossings(
+  drafts: Draft[],
+  role: Draft["role"],
+  material: string,
+  beltName: string,
+  undergroundName: string,
+  fromX: number,
+  toX: number,
+  y: number,
+  crossingColumns: number[],
+): void {
+  if (toX < fromX) return;
+  const columns = [...new Set(crossingColumns)]
+    .filter((column) => column > fromX && column < toX)
+    .sort((left, right) => left - right);
+  const clusters: Array<{ start: number; end: number }> = [];
+  columns.forEach((column) => {
+    const cluster = clusters.at(-1);
+    if (cluster && column <= cluster.end + 3 && column - cluster.start <= 8) cluster.end = column;
+    else clusters.push({ start: column, end: column });
+  });
+  const endpoints = new Map<number, "input" | "output">();
+  const skipped = new Set<number>();
+  clusters.forEach((cluster) => {
+    endpoints.set(cluster.start - 1, "input");
+    endpoints.set(cluster.end + 1, "output");
+    for (let x = cluster.start; x <= cluster.end; x += 1) skipped.add(x);
+  });
+  for (let x = fromX; x <= toX; x += 1) {
+    if (skipped.has(x)) continue;
+    const undergroundType = endpoints.get(x);
+    drafts.push({
+      role: undergroundType ? "underground-belt" : role,
+      material,
+      name: undergroundType ? undergroundName : beltName,
+      position: tilePosition(x, y),
+      direction: 4,
+      undergroundType,
+    });
+  }
+}
+
+function addWestboundBeltCrossings(
+  drafts: Draft[],
+  role: Draft["role"],
+  material: string,
+  beltName: string,
+  undergroundName: string,
+  fromX: number,
+  toX: number,
+  y: number,
+  crossingColumns: number[],
+  finalDirection: CardinalDirection,
+): void {
+  if (fromX < toX) return;
+  const columns = [...new Set(crossingColumns)]
+    .filter((column) => column < fromX && column > toX)
+    .sort((left, right) => left - right);
+  const clusters: Array<{ start: number; end: number }> = [];
+  columns.forEach((column) => {
+    const cluster = clusters.at(-1);
+    if (cluster && column <= cluster.end + 3 && column - cluster.start <= 8) cluster.end = column;
+    else clusters.push({ start: column, end: column });
+  });
+  const endpoints = new Map<number, "input" | "output">();
+  const skipped = new Set<number>();
+  clusters.forEach((cluster) => {
+    endpoints.set(cluster.end + 1, "input");
+    endpoints.set(cluster.start - 1, "output");
+    for (let x = cluster.start; x <= cluster.end; x += 1) skipped.add(x);
+  });
+  for (let x = fromX; x >= toX; x -= 1) {
+    if (skipped.has(x)) continue;
+    const undergroundType = endpoints.get(x);
+    drafts.push({
+      role: undergroundType ? "underground-belt" : role,
+      material,
+      name: undergroundType ? undergroundName : beltName,
+      position: tilePosition(x, y),
+      direction: x === toX ? finalDirection : 12,
+      undergroundType,
+    });
+  }
+}
+
+function addPumpFreeHorizontalPipe(
+  drafts: Draft[],
+  material: string,
+  fromX: number,
+  toX: number,
+  y: number,
+): void {
+  let x = fromX;
+  drafts.push({ role: "pipe", material, name: "pipe", position: tilePosition(x, y) });
+  while (x < toX) {
+    if (toX - x >= 5) {
+      const entranceX = x + 1;
+      const exitX = Math.min(x + 9, toX - 1);
+      drafts.push({
+        role: "pipe-to-ground",
+        material,
+        name: "pipe-to-ground",
+        position: tilePosition(entranceX, y),
+        direction: 12,
+      });
+      drafts.push({
+        role: "pipe-to-ground",
+        material,
+        name: "pipe-to-ground",
+        position: tilePosition(exitX, y),
+        direction: 4,
+      });
+      x = exitX;
+    } else {
+      x += 1;
+      drafts.push({ role: "pipe", material, name: "pipe", position: tilePosition(x, y) });
+    }
+  }
+}
+
+function distributeMachines(machineCount: number, rows: number): number[] {
+  return Array.from({ length: rows }, (_, row) =>
+    Math.floor(machineCount / rows) + (row < machineCount % rows ? 1 : 0));
+}
+
+function buildOneInputSourcePanel(
+  planned: PlannedRecipe,
+  beltName: string,
+  _splitterName: string,
+): SourcePanel | undefined {
+  if (planned.recipe.ingredients.length !== 1 || planned.recipe.ingredients[0].type !== "item" ||
+    planned.materialType !== "item") return undefined;
+  // Alternate the loading side of adjacent machine rows. Each pair shares its
+  // output belt, while neighboring pairs share an input belt. This is the same
+  // dense furnace/assembler grid principle used in hand-built smelting blocks,
+  // generalized from entity geometry rather than a recipe name.
+  const rows = Math.min(8, planned.machineCount);
+  const rowMachines = distributeMachines(planned.machineCount, rows);
+  const rowYs = Array.from({ length: rows }, (_, row) => 3 + row * 6);
+  const maximumMachines = Math.max(...rowMachines);
+  const lastX = (maximumMachines - 1) * 4;
+  const rightX = lastX + 3;
+  const drafts: Draft[] = [];
+  const input = planned.recipe.ingredients[0].name;
+  const undergroundName = beltName === "transport-belt"
+    ? "underground-belt"
+    : beltName === "fast-transport-belt"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+
+  const inputRows = Array.from({ length: Math.ceil(rows / 2) + (rows % 2 === 0 ? 1 : 0) },
+    (_, index) => index * 12);
+  const pairRows = Array.from({ length: Math.ceil(rows / 2) }, (_, index) => 6 + index * 12);
+  const outputColumns = pairRows.map((_, index) => -12 + index);
+  inputRows.forEach((y, index) => {
+    const eastbound = index % 2 === 0;
+    const startX = index === 0 ? -6 : eastbound ? -2 : rightX - 1;
+    const endX = eastbound ? rightX : -3;
+    const horizontal = Array.from(
+      { length: Math.abs(endX - startX) + 1 },
+      (_, offset) => ({ x: startX + (eastbound ? offset : -offset), y }),
+    );
+    addBeltPath(
+      drafts,
+      "input-belt",
+      input,
+      beltName,
+      horizontal,
+      index + 1 < inputRows.length ? 8 : eastbound ? 4 : 12,
+    );
+    if (index + 1 < inputRows.length) {
+      addVerticalBelt(
+        drafts,
+        input,
+        beltName,
+        undergroundName,
+        endX,
+        y + 1,
+        inputRows[index + 1],
+        pairRows,
+        eastbound ? 12 : 4,
+      );
+    }
+  });
+
+  rowYs.forEach((machineY, row) => {
+    const northInput = row % 2 === 0;
+    for (let machine = 0; machine < rowMachines[row]; machine += 1) {
+      const centerX = machine * 4;
+      drafts.push({
+        role: "machine",
+        material: planned.material,
+        recipe: planned.recipe.id,
+        name: planned.recipe.machine.name,
+        position: tilePosition(centerX, machineY),
+        direction: 0,
+        recipeSetting: planned.recipe.id,
+      });
+      drafts.push({
+        role: "input-inserter",
+        material: input,
+        recipe: planned.recipe.id,
+        name: "bulk-inserter",
+        position: tilePosition(centerX, machineY + (northInput ? -2 : 2)),
+        direction: northInput ? 0 : 8,
+      });
+      drafts.push({
+        role: "output-inserter",
+        material: planned.material,
+        recipe: planned.recipe.id,
+        name: "bulk-inserter",
+        position: tilePosition(centerX, machineY + (northInput ? 2 : -2)),
+        direction: northInput ? 0 : 8,
+      });
+      if (machine % 2 === 0) {
+        drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(centerX + 2, machineY + (northInput ? 1 : -1)) });
+      }
+    }
+  });
+
+  pairRows.forEach((y) => {
+    const outputColumn = outputColumns[pairRows.indexOf(y)];
+    for (let x = outputColumn; x <= lastX + 1; x += 1) {
+      drafts.push({
+        role: "output-belt",
+        material: planned.material,
+        name: beltName,
+        position: tilePosition(x, y),
+        direction: x === outputColumn ? 8 : 12,
+      });
+    }
+  });
+  if (pairRows.length === 1) {
+    const outputY = pairRows[0];
+    for (let x = outputColumns[0] - 1; x >= outputColumns[0] - 5; x -= 1) {
+      drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(x, outputY), direction: 12 });
+    }
+    return {
+      drafts,
+      inputPositions: new Map([[input, tilePosition(-6, 0)]]),
+      outputPosition: tilePosition(outputColumns[0] - 5, outputY),
+      outputDirection: 12,
+    };
+  }
+
+  // Merge full two-lane row belts with priority splitters rather than side
+  // loading them onto one lane of a vertical collector.
+  const firstMergeY = Math.max(...inputRows, ...pairRows) + 3;
+  outputColumns.forEach((column, index) => {
+    addVerticalBelt(
+      drafts,
+      planned.material,
+      beltName,
+      undergroundName,
+      column,
+      pairRows[index] + 1,
+      firstMergeY - 1,
+      [...inputRows, ...pairRows].filter((row) => row !== pairRows[index]),
+      8,
+    );
+  });
+  const survivingColumns: number[] = [];
+  for (let index = 0; index < outputColumns.length; index += 2) {
+    if (index + 1 >= outputColumns.length) {
+      survivingColumns.push(outputColumns[index]);
+      continue;
+    }
+    const leftColumn = outputColumns[index];
+    drafts.push({
+      role: "splitter",
+      material: planned.material,
+      name: _splitterName,
+      position: { x: leftColumn + 1, y: firstMergeY + 0.5 },
+      direction: 8,
+      outputPriority: index === 0 ? "left" : "right",
+    });
+    survivingColumns.push(index === 0 ? leftColumn + 1 : leftColumn);
+  }
+  let outputColumn = survivingColumns[0];
+  let outputY = firstMergeY + 1;
+  if (survivingColumns.length === 2) {
+    const secondMergeY = firstMergeY + 3;
+    survivingColumns.forEach((column) => {
+      for (let y = firstMergeY + 1; y < secondMergeY; y += 1) {
+        drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(column, y), direction: 8 });
+      }
+    });
+    drafts.push({
+      role: "splitter",
+      material: planned.material,
+      name: _splitterName,
+      position: { x: survivingColumns[0] + 1, y: secondMergeY + 0.5 },
+      direction: 8,
+      outputPriority: "right",
+    });
+    outputColumn = survivingColumns[0];
+    outputY = secondMergeY + 1;
+  }
+  drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(outputColumn, outputY), direction: 12 });
+  for (let x = outputColumn - 1; x >= outputColumn - 5; x -= 1) {
+    drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(x, outputY), direction: 12 });
+  }
+  return {
+    drafts,
+    inputPositions: new Map([[input, tilePosition(-6, 0)]]),
+    outputPosition: tilePosition(outputColumn - 5, outputY),
+    outputDirection: 12,
+  };
+}
+
+function buildItemFluidSourcePanel(
+  planned: PlannedRecipe,
+  beltName: string,
+): SourcePanel | undefined {
+  const item = planned.recipe.ingredients.find((ingredient) => ingredient.type === "item");
+  const fluid = planned.recipe.ingredients.find((ingredient) => ingredient.type === "fluid");
+  if (!item || !fluid || planned.recipe.ingredients.length !== 2 || planned.materialType !== "item") return undefined;
+  const drafts: Draft[] = [];
+  const undergroundName = beltName === "transport-belt"
+    ? "underground-belt"
+    : beltName === "fast-transport-belt"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+  const machineY = 5;
+  const machineXs = Array.from({ length: planned.machineCount }, (_, index) => index * 6);
+  const lastX = machineXs.at(-1)!;
+  for (let x = -6; x <= lastX + 2; x += 1) {
+    drafts.push({ role: "input-belt", material: item.name, name: beltName, position: tilePosition(x, machineY + 3), direction: 4 });
+  }
+  for (let x = -6; x <= lastX + 1; x += 1) {
+    drafts.push({ role: "pipe", material: fluid.name, name: "pipe", position: tilePosition(x, machineY - 5) });
+  }
+  machineXs.forEach((centerX, index) => {
+    drafts.push({
+      role: "machine",
+      material: planned.material,
+      recipe: planned.recipe.id,
+      name: planned.recipe.machine.name,
+      position: tilePosition(centerX, machineY),
+      direction: 0,
+      recipeSetting: planned.recipe.id,
+    });
+    drafts.push({ role: "input-inserter", material: item.name, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(centerX, machineY + 2), direction: 8 });
+    const connectorX = planned.recipe.machine.name === "chemical-plant" ? centerX - 1 : centerX;
+    for (let y = machineY - 4; y <= machineY - 2; y += 1) {
+      drafts.push({ role: "pipe", material: fluid.name, recipe: planned.recipe.id, name: "pipe", position: tilePosition(connectorX, y) });
+    }
+    drafts.push({ role: "output-inserter", material: planned.material, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(centerX + 2, machineY), direction: 12 });
+    drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(centerX + 3, machineY), direction: 8 });
+    drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(centerX + 3, machineY + 1), direction: 8 });
+    drafts.push({ role: "underground-belt", material: planned.material, name: undergroundName, position: tilePosition(centerX + 3, machineY + 2), direction: 8, undergroundType: "input" });
+    drafts.push({ role: "underground-belt", material: planned.material, name: undergroundName, position: tilePosition(centerX + 3, machineY + 4), direction: 8, undergroundType: "output" });
+    drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(centerX + 3, machineY + 5), direction: 4 });
+    if (index % 2 === 0) drafts.push({ role: "power-pole", name: "substation", position: tilePosition(centerX + 3, machineY - 3) });
+  });
+  for (let x = 3; x <= lastX + 8; x += 1) {
+    if (machineXs.some((centerX) => centerX + 3 === x)) continue;
+    drafts.push({ role: "output-belt", material: planned.material, name: beltName, position: tilePosition(x, machineY + 5), direction: 4 });
+  }
+  return {
+    drafts,
+    inputPositions: new Map([
+      [item.name, tilePosition(-6, machineY + 3)],
+      [fluid.name, tilePosition(-6, machineY - 5)],
+    ]),
+    outputPosition: tilePosition(lastX + 8, machineY + 5),
+    outputDirection: 4,
+  };
+}
+
+function nominalOutputPerMachine(planned: PlannedRecipe): number {
+  return planned.recipe.result.amount * planned.recipe.machine.craftingSpeed / planned.recipe.energySeconds;
+}
+
+/**
+ * Finds a four-node production motif entirely from graph adjacency, recipe
+ * arity, fluid boundaries, and the 3:2 direct-insertion ratio. Material and
+ * recipe identifiers are deliberately opaque.
+ */
+function detectHierarchicalPattern(plan: ChainPlan): HierarchicalPattern | undefined {
+  if (plan.targetType !== "item") return undefined;
+  const terminal = plan.recipes.find((planned) => planned.material === plan.target);
+  if (!terminal || terminal.recipe.machine.name !== "assembling-machine-3") return undefined;
+  const terminalItems = terminal.recipe.ingredients.filter((ingredient) => ingredient.type === "item");
+  const terminalFluids = terminal.recipe.ingredients.filter((ingredient) => ingredient.type === "fluid");
+  if (terminalItems.length !== 2 || terminalFluids.length === 0) return undefined;
+
+  for (const source of plan.recipes) {
+    if (source.materialType !== "item" || source.recipe.machine.name !== "assembling-machine-3" ||
+      source.recipe.ingredients.length !== 1 || source.recipe.ingredients[0].type !== "item") continue;
+    for (const primary of plan.recipes) {
+      const sourceIngredient = primary.recipe.ingredients.find((ingredient) =>
+        ingredient.type === "item" && ingredient.name === source.material);
+      const primaryOther = primary.recipe.ingredients.filter((ingredient) => ingredient.name !== source.material);
+      if (!sourceIngredient || primaryOther.length !== 1 || primaryOther[0].type !== "item" ||
+        primary.recipe.machine.name !== "assembling-machine-3") continue;
+      const sourceMachinesPerPrimaryMachine =
+        sourceIngredient.amount * primary.recipe.machine.craftingSpeed / primary.recipe.energySeconds /
+        nominalOutputPerMachine(source);
+      if (Math.abs(sourceMachinesPerPrimaryMachine - 1.5) > 1e-9) continue;
+
+      for (const secondary of plan.recipes) {
+        if (secondary.recipe.machine.name !== "assembling-machine-3") continue;
+        const secondaryNames = new Set(secondary.recipe.ingredients
+          .filter((ingredient) => ingredient.type === "item")
+          .map((ingredient) => ingredient.name));
+        const secondaryOther = secondary.recipe.ingredients.filter((ingredient) =>
+          ingredient.name !== source.material && ingredient.name !== primary.material);
+        if (secondaryNames.size !== 3 || !secondaryNames.has(source.material) ||
+          !secondaryNames.has(primary.material) || secondaryOther.length !== 1 ||
+          secondaryOther[0].type !== "item") continue;
+        if (!terminalItems.some((ingredient) => ingredient.name === primary.material) ||
+          !terminalItems.some((ingredient) => ingredient.name === secondary.material)) continue;
+
+        const terminalCrafts = terminal.craftsPerSecond;
+        return {
+          source,
+          primary,
+          secondary,
+          terminal,
+          sourceBoundary: source.recipe.ingredients[0],
+          primaryBoundary: primaryOther[0],
+          secondaryBoundary: secondaryOther[0],
+          terminalFluids,
+          primaryForTerminalPerSecond:
+            terminalCrafts * terminalItems.find((ingredient) => ingredient.name === primary.material)!.amount,
+          secondaryForTerminalPerSecond:
+            terminalCrafts * terminalItems.find((ingredient) => ingredient.name === secondary.material)!.amount,
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+function scaledSubplan(
+  original: ChainPlan,
+  target: PlannedRecipe,
+  outputPerSecond: number,
+  boundaries: Set<string>,
+): ChainPlan {
+  const templateByMaterial = new Map(original.recipes.map((planned) => [planned.material, planned]));
+  const demand = new Map<string, number>();
+  const ordered: PlannedRecipe[] = [];
+  const visiting = new Set<string>();
+  const boundaryTypes = new Map<string, MaterialType>();
+
+  const visit = (material: string, type: MaterialType, required: number): void => {
+    demand.set(material, (demand.get(material) ?? 0) + required);
+    if (boundaries.has(material)) {
+      boundaryTypes.set(material, type);
+      return;
+    }
+    if (visiting.has(material)) throw new Error(`Recursive recipe loop at ${material}.`);
+    const template = templateByMaterial.get(material);
+    if (!template) throw new Error(`Missing hierarchical producer for ${material}.`);
+    visiting.add(material);
+    const crafts = required / template.recipe.result.amount;
+    template.recipe.ingredients.forEach((ingredient) => visit(
+      ingredient.name,
+      ingredient.type,
+      crafts * ingredient.amount,
+    ));
+    visiting.delete(material);
+    const nominalCapacity = nominalOutputPerMachine(template);
+    const safeCapacity = nominalCapacity * 0.9;
+    const existing = ordered.find((planned) => planned.material === material);
+    if (existing) {
+      existing.outputPerSecond += required;
+      existing.designedOutputPerSecond += required;
+      existing.craftsPerSecond += crafts;
+      existing.machineCount = Math.ceil(existing.designedOutputPerSecond / safeCapacity - 1e-12);
+      existing.ingredientRates = existing.recipe.ingredients.map((ingredient) => ({
+        ...ingredient,
+        perSecond: existing.craftsPerSecond * ingredient.amount,
+      }));
+    } else {
+      ordered.push({
+        material,
+        materialType: template.materialType,
+        recipe: template.recipe,
+        outputPerSecond: required,
+        designedOutputPerSecond: required,
+        craftsPerSecond: crafts,
+        machineCount: Math.max(1, Math.ceil(required / safeCapacity - 1e-12)),
+        machineCapacityPerSecond: safeCapacity,
+        ingredientRates: template.recipe.ingredients.map((ingredient) => ({
+          ...ingredient,
+          perSecond: crafts * ingredient.amount,
+        })),
+      });
+    }
+  };
+  visit(target.material, target.materialType, outputPerSecond);
+
+  const inputs: PlannedInput[] = [...boundaries]
+    .filter((material) => (demand.get(material) ?? 0) > 0)
+    .map((material) => {
+      const requiredPerSecond = demand.get(material)!;
+      const type = boundaryTypes.get(material)!;
+      const maximumPerSecond = type === "item" ? original.beltCapacityPerSecond : original.pipeCapacityPerSecond;
+      return { name: material, type, requiredPerSecond, maximumPerSecond, utilization: requiredPerSecond / maximumPerSecond };
+    });
+  return {
+    ...original,
+    requestedOutputPerSecond: outputPerSecond,
+    effectiveOutputPerSecond: outputPerSecond,
+    maximumOutputPerSecond: outputPerSecond,
+    clamped: false,
+    target: target.material,
+    targetType: target.materialType,
+    inputs,
+    recipes: ordered,
+    materialRates: Object.fromEntries(demand),
+    unitInputRequirements: Object.fromEntries(inputs.map((input) => [input.name, input.requiredPerSecond / outputPerSecond])),
+    constraints: [],
+    limitingConstraints: [],
+  };
+}
+
+function translateIsland(drafts: Draft[], island: Island): void {
+  for (const draft of island.layout.drafts) {
+    drafts.push({
+      ...draft,
+      position: { x: draft.position.x + island.x, y: draft.position.y + island.y },
+    });
+  }
+}
+
+function translatedInputs(island: Island): PortTap[] {
+  return [...island.layout.inputPositions].map(([material, position]) => ({
+    material,
+    type: "item" as const,
+    x: Math.floor(position.x) + island.x,
+    y: Math.floor(position.y) + island.y,
+  }));
+}
+
+function translatedOutput(island: Island): { x: number; y: number } {
+  const position = floorPosition(island.layout.outputPosition);
+  return { x: position.x + island.x, y: position.y + island.y };
+}
+
+function translateSourcePanel(
+  targetDrafts: Draft[],
+  panel: SourcePanel,
+  x: number,
+  y: number,
+): { inputs: Map<string, { x: number; y: number }>; output: { x: number; y: number } } {
+  panel.drafts.forEach((draft) => targetDrafts.push({
+    ...draft,
+    position: { x: draft.position.x + x, y: draft.position.y + y },
+  }));
+  return {
+    inputs: new Map([...panel.inputPositions].map(([material, position]) => [material, {
+      x: position.x + x,
+      y: position.y + y,
+    }])),
+    output: {
+      x: panel.outputPosition.x + x,
+      y: panel.outputPosition.y + y,
+    },
+  };
+}
+
+function connectPanelToVirtualPort(
+  drafts: Draft[],
+  material: string,
+  outputPosition: { x: number; y: number },
+  inputPosition: { x: number; y: number },
+  beltName: string,
+  outputDirection: CardinalDirection,
+  approachY: number,
+  crossingRows: number[],
+  undergroundName: string,
+  outerX?: number,
+  crossingColumns: number[] = [],
+): void {
+  const output = floorPosition(outputPosition);
+  const input = floorPosition(inputPosition);
+  const naturalRouteX = output.x + (outputDirection === 12 ? -1 : 1);
+  const routeX = outerX ?? naturalRouteX;
+  if (routeX >= input.x - 1) throw new Error(`No west-side source corridor remains for ${material}.`);
+  const path: Array<{ x: number; y: number }> = [];
+  const initialStep = routeX >= naturalRouteX ? 1 : -1;
+  for (let x = naturalRouteX; initialStep > 0 ? x <= routeX : x >= routeX; x += initialStep) {
+    path.push({ x, y: output.y });
+  }
+  const verticalStep = approachY >= output.y ? 1 : -1;
+  for (let y = output.y + verticalStep; verticalStep > 0 ? y <= approachY : y >= approachY; y += verticalStep) {
+    path.push({ x: routeX, y });
+  }
+  const finalVerticalStep = input.y >= approachY ? 1 : -1;
+  addBeltPath(drafts, "material-bus", material, beltName, path, 4);
+  addHorizontalBeltCrossings(
+    drafts,
+    "material-bus",
+    material,
+    beltName,
+    undergroundName,
+    routeX + 1,
+    input.x - 2,
+    approachY,
+    crossingColumns,
+  );
+  drafts.push({
+    role: "material-bus",
+    material,
+    name: beltName,
+    position: tilePosition(input.x - 1, approachY),
+    direction: finalVerticalStep > 0 ? 8 : 0,
+  });
+  addVerticalBelt(
+    drafts,
+    material,
+    beltName,
+    undergroundName,
+    input.x - 1,
+    approachY + finalVerticalStep,
+    input.y,
+    crossingRows.filter((row) => row !== input.y),
+    4,
+  );
+}
+
+function connectShelfPanelToVirtualPort(
+  drafts: Draft[],
+  material: string,
+  outputPosition: { x: number; y: number },
+  outputDirection: CardinalDirection,
+  inputPosition: { x: number; y: number },
+  beltName: string,
+  corridorY: number,
+  outerX: number,
+  crossingRows: number[],
+  escapeColumns: number[],
+  outerColumns: number[],
+  undergroundName: string,
+): void {
+  const output = floorPosition(outputPosition);
+  const input = floorPosition(inputPosition);
+  const escapeX = output.x + (outputDirection === 12 ? -1 : 1);
+  drafts.push({
+    role: "material-bus",
+    material,
+    name: beltName,
+    position: tilePosition(escapeX, output.y),
+    direction: 0,
+  });
+  addVerticalBelt(
+    drafts,
+    material,
+    beltName,
+    undergroundName,
+    escapeX,
+    output.y - 1,
+    corridorY,
+    crossingRows,
+    12,
+  );
+  addWestboundBeltCrossings(
+    drafts,
+    "material-bus",
+    material,
+    beltName,
+    undergroundName,
+    escapeX - 1,
+    outerX,
+    corridorY,
+    escapeColumns.filter((column) => column !== escapeX),
+    8,
+  );
+  addVerticalBelt(
+    drafts,
+    material,
+    beltName,
+    undergroundName,
+    outerX,
+    corridorY + 1,
+    input.y,
+    crossingRows.filter((row) => row !== corridorY),
+    4,
+  );
+  addHorizontalBeltCrossings(
+    drafts,
+    "material-bus",
+    material,
+    beltName,
+    undergroundName,
+    outerX + 1,
+    input.x - 1,
+    input.y,
+    outerColumns.filter((column) => column !== outerX),
+  );
+}
+
+function draftHalfSize(draft: Draft): { x: number; y: number } {
+  if (["assembling-machine-3", "electric-furnace", "chemical-plant"].includes(draft.name)) {
+    return { x: 1.35, y: 1.35 };
+  }
+  if (draft.name === "substation") return { x: 0.85, y: 0.85 };
+  if (draft.name.includes("splitter")) {
+    return draft.direction === 0 || draft.direction === 8 ? { x: 0.85, y: 0.35 } : { x: 0.35, y: 0.85 };
+  }
+  return { x: 0.32, y: 0.32 };
+}
+
+function canPlace(drafts: Draft[], candidate: Draft): boolean {
+  const half = draftHalfSize(candidate);
+  return !drafts.some((draft) => {
+    const other = draftHalfSize(draft);
+    return Math.abs(draft.position.x - candidate.position.x) < half.x + other.x &&
+      Math.abs(draft.position.y - candidate.position.y) < half.y + other.y;
+  });
+}
+
+/** Connects independently compiled islands with a sparse, collision-aware
+ * pole spine. Island internals remain responsible for machine coverage. */
+function connectPowerComponents(drafts: Draft[]): void {
+  const existing = drafts.filter((draft) => draft.role === "power-pole");
+  if (existing.length === 0) return;
+  const positions = existing.map((draft) => floorPosition(draft.position));
+  const parent = positions.map((_, index) => index);
+  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
+  const unite = (left: number, right: number): void => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+  positions.forEach((left, leftIndex) => positions.forEach((right, rightIndex) => {
+    if (rightIndex <= leftIndex) return;
+    if (Math.hypot(left.x - right.x, left.y - right.y) <= 9) unite(leftIndex, rightIndex);
+  }));
+  const components = new Map<number, Array<{ x: number; y: number }>>();
+  positions.forEach((position, index) => {
+    const entries = components.get(find(index)) ?? [];
+    entries.push(position);
+    components.set(find(index), entries);
+  });
+  if (components.size <= 1) return;
+
+  const maximumOccupiedY = Math.ceil(Math.max(...drafts.map((draft) => draft.position.y + draftHalfSize(draft).y)));
+  const backboneY = maximumOccupiedY + 1;
+  const minimumX = Math.min(...positions.map((position) => position.x));
+  const maximumX = Math.max(...positions.map((position) => position.x));
+  const backboneXs: number[] = [];
+  for (let x = minimumX; x < maximumX; x += 8) backboneXs.push(x);
+  backboneXs.push(maximumX);
+  backboneXs.forEach((x) => {
+    const candidate: Draft = { role: "power-pole", name: "medium-electric-pole", position: tilePosition(x, backboneY) };
+    if (canPlace(drafts, candidate)) drafts.push(candidate);
+  });
+
+  const offsets: ReadonlyArray<readonly [number, number]> = Array.from({ length: 49 }, (_, index) => {
+    const offsetX = index % 7 - 3;
+    const offsetY = Math.floor(index / 7) - 3;
+    return [offsetX, offsetY] as const;
+  }).sort((left, right) =>
+    Math.abs(left[0]) + Math.abs(left[1]) - Math.abs(right[0]) - Math.abs(right[1]));
+  for (const component of components.values()) {
+    const representative = [...component].sort((left, right) =>
+      right.y - left.y || Math.abs(left.x - minimumX) - Math.abs(right.x - minimumX))[0];
+    const targetX = backboneXs.reduce((best, x) =>
+      Math.abs(x - representative.x) < Math.abs(best - representative.x) ? x : best, backboneXs[0]);
+    const target = { x: targetX, y: backboneY };
+    const distance = Math.hypot(target.x - representative.x, target.y - representative.y);
+    const segments = Math.ceil(distance / 8);
+    let previous = representative;
+    for (let segment = 1; segment < segments; segment += 1) {
+      const ideal = {
+        x: Math.round(representative.x + (target.x - representative.x) * segment / segments),
+        y: Math.round(representative.y + (target.y - representative.y) * segment / segments),
+      };
+      const placed = offsets.map(([offsetX, offsetY]) => ({ x: ideal.x + offsetX, y: ideal.y + offsetY }))
+        .find((position) => {
+          if (Math.hypot(position.x - previous.x, position.y - previous.y) > 9) return false;
+          const candidate: Draft = {
+            role: "power-pole",
+            name: "medium-electric-pole",
+            position: tilePosition(position.x, position.y),
+          };
+          return canPlace(drafts, candidate);
+        });
+      if (!placed) throw new Error(`Could not connect the power island near ${ideal.x},${ideal.y}.`);
+      drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(placed.x, placed.y) });
+      previous = placed;
+    }
+    while (Math.hypot(target.x - previous.x, target.y - previous.y) > 9) {
+      const remaining = Math.hypot(target.x - previous.x, target.y - previous.y);
+      const ideal = {
+        x: Math.round(previous.x + (target.x - previous.x) * 7 / remaining),
+        y: Math.round(previous.y + (target.y - previous.y) * 7 / remaining),
+      };
+      const placed = offsets.map(([offsetX, offsetY]) => ({ x: ideal.x + offsetX, y: ideal.y + offsetY }))
+        .find((position) => {
+          if (Math.hypot(position.x - previous.x, position.y - previous.y) > 9 ||
+            Math.hypot(target.x - position.x, target.y - position.y) >= remaining) return false;
+          return canPlace(drafts, {
+            role: "power-pole",
+            name: "medium-electric-pole",
+            position: tilePosition(position.x, position.y),
+          });
+        });
+      if (!placed) throw new Error("Power-island spine exceeded medium-pole wire reach.");
+      drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(placed.x, placed.y) });
+      previous = placed;
+    }
+  }
+}
+
+function routeCanonicalOutput(
+  drafts: Draft[],
+  start: { x: number; y: number },
+  side: Side,
+  material: string,
+  beltName: string,
+): { x: number; y: number } {
+  if (side === "east") return start;
+  const minimumX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x))) - 6;
+  const minimumY = Math.floor(Math.min(...drafts.map((draft) => draft.position.y - draftHalfSize(draft).y))) - 6;
+  const maximumY = Math.ceil(Math.max(...drafts.map((draft) => draft.position.y + draftHalfSize(draft).y))) + 6;
+  const outsideX = start.x + 3;
+  const path: Array<{ x: number; y: number }> = [
+    { x: start.x + 1, y: start.y },
+    { x: start.x + 2, y: start.y },
+    { x: outsideX, y: start.y },
+  ];
+  if (side === "north") {
+    for (let y = start.y - 1; y >= minimumY; y -= 1) path.push({ x: outsideX, y });
+  } else {
+    for (let y = start.y + 1; y <= maximumY; y += 1) path.push({ x: outsideX, y });
+    if (side === "west") {
+      for (let x = outsideX - 1; x >= minimumX; x -= 1) path.push({ x, y: maximumY });
+    }
+  }
+  addBeltPath(
+    drafts,
+    "output-belt",
+    material,
+    beltName,
+    path,
+    side === "north" ? 0 : side === "south" ? 8 : 12,
+  );
+  return path.at(-1)!;
+}
+
+function addBoundaryFanout(
+  drafts: Draft[],
+  taps: PortTap[],
+  plan: ChainPlan,
+  beltName: string,
+  splitterName: string,
+  undergroundName: string,
+  protectedRows: number[] = [],
+  requestedMaterialOrder?: string[],
+): Map<string, { x: number; y: number }> {
+  const inputPositions = new Map<string, { x: number; y: number }>();
+  const materialOrder = requestedMaterialOrder ??
+    plan.inputs.filter((input) => input.type === "item").map((input) => input.name);
+  const busBaseY = Math.min(-6, ...protectedRows.map((row) => row - 3));
+  const boundaryBusRows = [
+    -2, // shared fluid ingress; item branches tunnel beneath it
+    ...protectedRows,
+    ...materialOrder.flatMap((_, index) => [busBaseY - index * 3, busBaseY + 1 - index * 3]),
+  ];
+  const branchXByTap = new Map<PortTap, number>();
+  let branchIndex = 0;
+  materialOrder.forEach((material) => {
+    taps.filter((tap) => tap.material === material)
+      .sort((left, right) => left.y - right.y)
+      .forEach((tap) => {
+        branchXByTap.set(tap, -8 - branchIndex * 3);
+        branchIndex += 1;
+      });
+  });
+  const allBranchXs = [...branchXByTap.values()];
+  const existingVerticalBeltXs = [...new Set(drafts
+    .filter((draft) => (draft.direction === 0 || draft.direction === 8) &&
+      (draft.name.includes("belt") || draft.name.includes("splitter")))
+    .map((draft) => Math.floor(draft.position.x)))];
+  const globalStartX = Math.min(...allBranchXs) - 3;
+  materialOrder.forEach((material, materialIndex) => {
+    const materialTaps = taps.filter((tap) => tap.material === material).sort((left, right) => left.y - right.y);
+    if (materialTaps.length === 0) return;
+    const busY = busBaseY - materialIndex * 3;
+    const branchXs = materialTaps.map((tap) => branchXByTap.get(tap)!);
+    const startX = globalStartX;
+    const endX = Math.max(...branchXs);
+    const splitterXs = new Set(branchXs.map((x) => x - 1));
+    for (let x = startX; x <= endX; x += 1) {
+      if (splitterXs.has(x)) continue;
+      drafts.push({ role: "input-belt", material, name: beltName, position: tilePosition(x, busY), direction: 4 });
+    }
+    inputPositions.set(material, tilePosition(startX, busY));
+    materialTaps.forEach((tap, tapIndex) => {
+      const branchX = branchXs[tapIndex];
+      drafts.push({
+        role: "splitter",
+        material,
+        name: splitterName,
+        position: { x: branchX - 0.5, y: busY + 1 },
+        direction: 4,
+      });
+      addVerticalBelt(
+        drafts,
+        material,
+        beltName,
+        undergroundName,
+        branchX,
+        busY + 1,
+        tap.y,
+        boundaryBusRows.filter((row) => row !== tap.y && row !== busY && row !== busY + 1),
+        4,
+      );
+      addHorizontalBeltCrossings(
+        drafts,
+        "input-belt",
+        material,
+        beltName,
+        undergroundName,
+        branchX + 1,
+        tap.x - 1,
+        tap.y,
+        [
+          ...allBranchXs.filter((candidate) => candidate !== branchX),
+          ...existingVerticalBeltXs.filter((candidate) => candidate !== branchX),
+        ],
+      );
+    });
+  });
+  return inputPositions;
+}
+
+function addTerminalRow(
+  drafts: Draft[],
+  pattern: HierarchicalPattern,
+  greenOutputs: Array<{ x: number; y: number }>,
+  secondaryOutput: { x: number; y: number },
+  beltName: string,
+  splitterName: string,
+  undergroundName: string,
+): { fluidPorts: PortTap[]; outputPosition: { x: number; y: number } } {
+  const machineY = 13;
+  const firstMachineX = Math.max(84, ...greenOutputs.map((port) => port.x + 12), secondaryOutput.x + 10);
+  const machineXs = Array.from({ length: pattern.terminal.machineCount }, (_, index) => firstMachineX + index * 4);
+  const lastMachineX = machineXs.at(-1)!;
+  const primaryY = machineY + 3;
+  const secondaryY = machineY + 4;
+  const mergeX = firstMachineX - 6;
+
+  const sortedGreen = [...greenOutputs].sort((left, right) => left.y - right.y);
+  if (sortedGreen.length !== 2) throw new Error("The balanced hierarchical terminal requires two primary islands.");
+  sortedGreen.forEach((port, index) => {
+    const targetY = primaryY + index;
+    const routeX = port.x + 1;
+    const verticalDirection: CardinalDirection = targetY > port.y ? 8 : 0;
+    drafts.push({
+      role: "material-bus",
+      material: pattern.primary.material,
+      name: beltName,
+      position: tilePosition(routeX, port.y),
+      direction: verticalDirection,
+    });
+    addVerticalBelt(
+      drafts,
+      pattern.primary.material,
+      beltName,
+      undergroundName,
+      routeX,
+      port.y + (targetY > port.y ? 1 : -1),
+      targetY,
+      [],
+      4,
+    );
+    addBeltPath(
+      drafts,
+      "material-bus",
+      pattern.primary.material,
+      beltName,
+      horizontalPoints(routeX + 1, mergeX - 2, targetY),
+      4,
+    );
+  });
+  drafts.push({
+    role: "splitter",
+    material: pattern.primary.material,
+    name: splitterName,
+    position: { x: mergeX - 0.5, y: primaryY + 1 },
+    direction: 4,
+    outputPriority: "left",
+  });
+  addBeltPath(
+    drafts,
+    "ingredient-feeder",
+    pattern.primary.material,
+    beltName,
+    horizontalPoints(mergeX, lastMachineX + 2, primaryY),
+    4,
+  );
+
+  const secondaryRouteX = secondaryOutput.x + 1;
+  drafts.push({
+    role: "material-bus",
+    material: pattern.secondary.material,
+    name: beltName,
+    position: tilePosition(secondaryRouteX, secondaryOutput.y),
+    direction: secondaryY + 1 > secondaryOutput.y ? 8 : 0,
+  });
+  addVerticalBelt(
+    drafts,
+    pattern.secondary.material,
+    beltName,
+    undergroundName,
+    secondaryRouteX,
+    secondaryOutput.y + (secondaryY + 1 > secondaryOutput.y ? 1 : -1),
+    secondaryY + 1,
+    [],
+    4,
+  );
+  addBeltPath(
+    drafts,
+    "material-bus",
+    pattern.secondary.material,
+    beltName,
+    [
+      ...horizontalPoints(secondaryRouteX + 1, firstMachineX - 3, secondaryY + 1),
+      { x: firstMachineX - 2, y: secondaryY + 1 },
+      { x: firstMachineX - 2, y: secondaryY },
+      ...horizontalPoints(firstMachineX - 1, lastMachineX + 2, secondaryY),
+    ],
+    4,
+  );
+
+  const outputY = machineY - 3;
+  const fluidHeaderY = machineY - 5;
+  const fluidPorts: PortTap[] = [];
+  pattern.terminalFluids.forEach((fluid, fluidIndex) => {
+    if (fluidIndex > 0) throw new Error("The compact terminal currently accepts one fluid contract.");
+    const startX = firstMachineX - 6;
+    fluidPorts.push({ material: fluid.name, type: "fluid", x: startX, y: fluidHeaderY });
+    for (let x = startX; x <= lastMachineX; x += 1) {
+      drafts.push({ role: "pipe", material: fluid.name, name: "pipe", position: tilePosition(x, fluidHeaderY) });
+    }
+    machineXs.forEach((centerX) => {
+      drafts.push({
+        role: "pipe",
+        material: fluid.name,
+        recipe: pattern.terminal.recipe.id,
+        name: "pipe",
+        position: tilePosition(centerX, fluidHeaderY + 1),
+      });
+      drafts.push({
+        role: "pipe",
+        material: fluid.name,
+        recipe: pattern.terminal.recipe.id,
+        name: "pipe",
+        position: tilePosition(centerX, fluidHeaderY + 2),
+      });
+      drafts.push({
+        role: "pipe",
+        material: fluid.name,
+        recipe: pattern.terminal.recipe.id,
+        name: "pipe",
+        position: tilePosition(centerX, machineY - 2),
+      });
+    });
+  });
+
+  for (let x = firstMachineX - 2; x <= lastMachineX + 7; x += 1) {
+    const terminalType = machineXs.some((centerX) => centerX - 1 === x)
+      ? "input"
+      : machineXs.some((centerX) => centerX + 1 === x)
+        ? "output"
+        : undefined;
+    if (machineXs.includes(x)) continue;
+    drafts.push({
+      role: terminalType ? "underground-belt" : "output-belt",
+      material: pattern.terminal.material,
+      name: terminalType ? undergroundName : beltName,
+      position: tilePosition(x, outputY),
+      direction: 4,
+      undergroundType: terminalType,
+    });
+  }
+
+  machineXs.forEach((centerX, index) => {
+    drafts.push({
+      role: "machine",
+      material: pattern.terminal.material,
+      recipe: pattern.terminal.recipe.id,
+      name: pattern.terminal.recipe.machine.name,
+      position: tilePosition(centerX, machineY),
+      direction: 0,
+      recipeSetting: pattern.terminal.recipe.id,
+    });
+    drafts.push({
+      role: "input-inserter",
+      material: pattern.primary.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(centerX - 1, machineY + 2),
+      direction: 8,
+    });
+    drafts.push({
+      role: "input-inserter",
+      material: pattern.secondary.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "long-handed-inserter",
+      position: tilePosition(centerX + 1, machineY + 2),
+      direction: 8,
+    });
+    drafts.push({
+      role: "output-inserter",
+      material: pattern.terminal.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(centerX + 1, machineY - 2),
+      direction: 8,
+    });
+    if (index % 2 === 0) {
+      drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(centerX + 2, machineY) });
+    }
+  });
+  return {
+    fluidPorts,
+    outputPosition: tilePosition(lastMachineX + 7, outputY),
+  };
+}
+
+function addDirectInsertedTerminal(
+  drafts: Draft[],
+  pattern: HierarchicalPattern,
+  primaryIsland: Island,
+  secondaryOutput: { x: number; y: number; direction: CardinalDirection },
+  beltName: string,
+  undergroundName: string,
+  rotationQuarterTurns: number,
+): { fluidPorts: PortTap[]; outputPosition: { x: number; y: number } } {
+  const primaryMachines = primaryIsland.layout.drafts
+    .filter((draft) => draft.role === "machine" && draft.recipe === pattern.primary.recipe.id)
+    .map((draft) => {
+      const position = floorPosition(draft.position);
+      return { x: position.x + primaryIsland.x, y: position.y + primaryIsland.y };
+    })
+    .sort((left, right) => left.x - right.x || left.y - right.y);
+  if (primaryMachines.length !== pattern.terminal.machineCount ||
+    Math.abs(nominalOutputPerMachine(pattern.primary) -
+      pattern.terminal.recipe.ingredients.find((ingredient) => ingredient.name === pattern.primary.material)!.amount *
+      pattern.terminal.recipe.machine.craftingSpeed / pattern.terminal.recipe.energySeconds) > 1e-9) {
+    throw new Error("The terminal edge is not a capacity-matched direct-insertion contract.");
+  }
+
+  // Remove the primary island's exported belt. Its result now crosses exactly
+  // one inserter into the capacity-matched terminal assembler below it.
+  const removablePrimaryDrafts = new Set(primaryIsland.layout.drafts
+    .filter((draft) =>
+      (draft.role === "output-inserter" && draft.recipe === pattern.primary.recipe.id) ||
+      (draft.material === pattern.primary.material &&
+        (draft.role === "output-belt" || draft.role === "underground-belt")))
+    .map((draft) => [
+      draft.role,
+      draft.position.x + primaryIsland.x,
+      draft.position.y + primaryIsland.y,
+      draft.name,
+      draft.material ?? "",
+      draft.recipe ?? "",
+    ].join("|")));
+  for (let index = drafts.length - 1; index >= 0; index -= 1) {
+    const draft = drafts[index];
+    const key = [draft.role, draft.position.x, draft.position.y, draft.name, draft.material ?? "", draft.recipe ?? ""].join("|");
+    if (removablePrimaryDrafts.has(key)) drafts.splice(index, 1);
+  }
+
+  const machineY = primaryMachines[0].y + 4;
+  if (primaryMachines.some((machine) => machine.y !== primaryMachines[0].y)) {
+    throw new Error("Direct terminal cells require a single primary machine row.");
+  }
+  const outputY = machineY + 3;
+  const secondaryY = machineY + 4;
+  const fluidHeaderY = primaryMachines[0].y - 6;
+  const firstMachineX = primaryMachines[0].x;
+  const lastMachineX = primaryMachines.at(-1)!.x;
+  const connectorXs = primaryMachines.map((machine) => machine.x);
+
+  primaryMachines.forEach((primaryMachine) => {
+    const centerX = primaryMachine.x;
+    drafts.push({
+      role: "machine",
+      material: pattern.terminal.material,
+      recipe: pattern.terminal.recipe.id,
+      name: pattern.terminal.recipe.machine.name,
+      position: tilePosition(centerX, machineY),
+      direction: 0,
+      recipeSetting: pattern.terminal.recipe.id,
+    });
+    drafts.push({
+      role: "input-inserter",
+      material: pattern.primary.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(centerX + (rotationQuarterTurns === 1 ? 1 : -1), machineY - 2),
+      direction: 0,
+    });
+    drafts.push({
+      role: "input-inserter",
+      material: pattern.secondary.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "long-handed-inserter",
+      position: tilePosition(centerX + 1, machineY + 2),
+      direction: 8,
+    });
+    drafts.push({
+      role: "output-inserter",
+      material: pattern.terminal.material,
+      recipe: pattern.terminal.recipe.id,
+      name: "bulk-inserter",
+      position: tilePosition(centerX - 1, machineY + 2),
+      direction: 0,
+    });
+    if (rotationQuarterTurns === 0) {
+      drafts.push({
+        role: "pipe-to-ground",
+        material: pattern.terminalFluids[0].name,
+        name: "pipe-to-ground",
+        position: tilePosition(centerX, primaryMachine.y - 5),
+        direction: 0,
+      });
+      drafts.push({
+        role: "pipe-to-ground",
+        material: pattern.terminalFluids[0].name,
+        name: "pipe-to-ground",
+        position: tilePosition(centerX, machineY - 2),
+        direction: 8,
+      });
+    } else {
+      const sideX = centerX + (rotationQuarterTurns === 1 ? -2 : 2);
+      drafts.push({
+        role: "pipe-to-ground",
+        material: pattern.terminalFluids[0].name,
+        recipe: pattern.terminal.recipe.id,
+        name: "pipe-to-ground",
+        position: tilePosition(sideX, fluidHeaderY + 1),
+        direction: 0,
+      });
+      drafts.push({
+        role: "pipe-to-ground",
+        material: pattern.terminalFluids[0].name,
+        recipe: pattern.terminal.recipe.id,
+        name: "pipe-to-ground",
+        position: tilePosition(sideX, machineY - 2),
+        direction: 8,
+      });
+      drafts.push({ role: "pipe", material: pattern.terminalFluids[0].name, recipe: pattern.terminal.recipe.id, name: "pipe", position: tilePosition(sideX, machineY - 1) });
+      drafts.push({ role: "pipe", material: pattern.terminalFluids[0].name, recipe: pattern.terminal.recipe.id, name: "pipe", position: tilePosition(sideX, machineY) });
+    }
+  });
+
+  // A direct-insertion row is denser than the medium poles in the ratio-cell
+  // primitive were designed to cover. A sparse substation comb powers every
+  // terminal inserter while preserving the compact pitch-four/eight packing.
+  for (let x = firstMachineX + 4; x <= lastMachineX + 4; x += 16) {
+    const candidates = [[x, machineY + 7], [x + 2, machineY + 7], [x, machineY + 8]] as const;
+    const position = candidates.find(([candidateX, candidateY]) => canPlace(drafts, {
+      role: "power-pole",
+      name: "substation",
+      position: tilePosition(candidateX, candidateY),
+    }));
+    if (!position) throw new Error(`Could not power the direct terminal near ${x},${machineY + 7}.`);
+    drafts.push({ role: "power-pole", name: "substation", position: tilePosition(position[0], position[1]) });
+  }
+
+  for (const [row, material] of [[outputY, pattern.terminal.material], [secondaryY, pattern.secondary.material]] as const) {
+    for (let x = firstMachineX - 4; x <= lastMachineX + 8; x += 1) {
+      drafts.push({
+        role: material === pattern.terminal.material ? "output-belt" : "ingredient-feeder",
+        material,
+        name: beltName,
+        position: tilePosition(x, row),
+        direction: 4,
+      });
+    }
+  }
+
+  const fluidHeaderStartX = connectorXs[0] + (rotationQuarterTurns === 1 ? -2 : 0);
+  const fluidHeaderEndX = connectorXs.at(-1)! + (rotationQuarterTurns === 3 ? 2 : 0);
+  for (let x = fluidHeaderStartX; x <= fluidHeaderEndX; x += 1) {
+    drafts.push({ role: "pipe", material: pattern.terminalFluids[0].name, name: "pipe", position: tilePosition(x, fluidHeaderY) });
+  }
+
+  const routeX = firstMachineX - 8;
+  const secondaryCrossingRows = drafts
+    .filter((draft) => Math.floor(draft.position.x) === routeX &&
+      (draft.name.includes("belt") || draft.name.includes("splitter")) &&
+      draft.material !== pattern.secondary.material)
+    .map((draft) => Math.floor(draft.position.y));
+  if (secondaryOutput.direction === 4) {
+    const escapeX = secondaryOutput.x + 1;
+    const corridorY = secondaryY + 1;
+    drafts.push({
+      role: "material-bus",
+      material: pattern.secondary.material,
+      name: beltName,
+      position: tilePosition(escapeX, secondaryOutput.y),
+      direction: 0,
+    });
+    addVerticalBelt(
+      drafts,
+      pattern.secondary.material,
+      beltName,
+      undergroundName,
+      escapeX,
+      secondaryOutput.y - 1,
+      corridorY,
+      secondaryCrossingRows,
+      12,
+    );
+    addWestboundBeltCrossings(
+      drafts,
+      "material-bus",
+      pattern.secondary.material,
+      beltName,
+      undergroundName,
+      escapeX - 1,
+      routeX,
+      corridorY,
+      [],
+      0,
+    );
+    drafts.push({
+      role: "material-bus",
+      material: pattern.secondary.material,
+      name: beltName,
+      position: tilePosition(routeX, secondaryY),
+      direction: 4,
+    });
+  } else {
+    for (let x = secondaryOutput.x - 1; x > routeX; x -= 1) {
+      drafts.push({
+        role: "material-bus",
+        material: pattern.secondary.material,
+        name: beltName,
+        position: tilePosition(x, secondaryOutput.y),
+        direction: 12,
+      });
+    }
+    for (let index = drafts.length - 1; index >= 0; index -= 1) {
+      const draft = drafts[index];
+      if (draft.material === pattern.secondary.material &&
+        Math.floor(draft.position.x) === routeX && Math.floor(draft.position.y) === secondaryOutput.y &&
+        (draft.name.includes("belt") || draft.name.includes("splitter"))) {
+        drafts.splice(index, 1);
+      }
+    }
+    drafts.push({
+      role: "material-bus",
+      material: pattern.secondary.material,
+      name: beltName,
+      position: tilePosition(routeX, secondaryOutput.y),
+      direction: secondaryY < secondaryOutput.y ? 0 : 8,
+    });
+    addVerticalBelt(
+      drafts,
+      pattern.secondary.material,
+      beltName,
+      undergroundName,
+      routeX,
+      secondaryOutput.y + (secondaryY < secondaryOutput.y ? -1 : 1),
+      secondaryY,
+      secondaryCrossingRows,
+      4,
+    );
+  }
+  addBeltPath(
+    drafts,
+    "material-bus",
+    pattern.secondary.material,
+    beltName,
+    horizontalPoints(routeX + 1, firstMachineX - 5, secondaryY),
+    4,
+  );
+
+  return {
+    fluidPorts: [{
+      material: pattern.terminalFluids[0].name,
+      type: "fluid",
+      x: fluidHeaderStartX,
+      y: fluidHeaderY,
+    }],
+    outputPosition: tilePosition(lastMachineX + 8, outputY),
+  };
+}
+
+/**
+ * Compiles a single boundary-fed recipe as a set of short, parallel machine
+ * rows.  The row count is chosen from entity geometry, while the existing
+ * planner remains responsible for exact rate and inserter-capacity sizing.
+ * This is deliberately recipe-name agnostic: it applies to any item recipe
+ * with at most two solid contracts and one assembling-machine fluid contract.
+ */
+export function buildBoundaryRecipeLayout(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): CanonicalLayout | undefined {
+  if (plan.targetType !== "item" || plan.recipes.length !== 1) return undefined;
+  const planned = plan.recipes[0];
+  if (planned.material !== plan.target || planned.materialType !== "item") return undefined;
+  const boundaries = new Set(plan.inputs.map((input) => input.name));
+  if (planned.recipe.ingredients.some((ingredient) => !boundaries.has(ingredient.name))) return undefined;
+  const itemIngredients = [...planned.ingredientRates]
+    .filter((ingredient) => ingredient.type === "item")
+    .sort((left, right) => right.perSecond - left.perSecond || left.name.localeCompare(right.name));
+  const fluidIngredients = planned.ingredientRates.filter((ingredient) => ingredient.type === "fluid");
+  if (itemIngredients.length > 2 || fluidIngredients.length > 1) return undefined;
+  if (fluidIngredients.length > 0 && planned.recipe.machine.name !== "assembling-machine-3") return undefined;
+  // Factorio's rotated crafting-with-fluid socket needs the legacy
+  // rotation-aware bridge. Keep the compact row for its proven west-facing
+  // orientation and let the established compiler handle other rotations.
+  if (fluidIngredients.length > 0 && inputSide !== "west") return undefined;
+
+  const belt = BELTS[beltTier];
+  const undergroundName = beltTier === "yellow"
+    ? "underground-belt"
+    : beltTier === "red"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+  const rowCapacity = 12;
+  const rowCount = Math.max(1, Math.ceil(planned.machineCount / rowCapacity));
+  const rowMachines = distributeMachines(planned.machineCount, rowCount);
+  const rowPitch = fluidIngredients.length > 0 ? 12 : 9;
+  const rowYs = rowMachines.map((_, row) => row * rowPitch);
+  const maximumColumns = Math.max(...rowMachines);
+  const lastMachineX = (maximumColumns - 1) * 4;
+  const collectorX = lastMachineX + 7;
+  const drafts: Draft[] = [];
+  const taps: PortTap[] = [];
+  const outputRows: number[] = [];
+  const protectedRows: number[] = [];
+  const pipeCrossingRows: number[] = [];
+
+  rowMachines.forEach((machineCount, row) => {
+    const machineY = rowYs[row];
+    const machineXs = Array.from({ length: machineCount }, (_, index) => index * 4);
+    const rowLastMachineX = machineXs.at(-1)!;
+    itemIngredients.forEach((ingredient, ingredientIndex) => {
+      const feederY = machineY + 3 + ingredientIndex;
+      pipeCrossingRows.push(feederY);
+      taps.push({ material: ingredient.name, type: "item", x: -4, y: feederY });
+      for (let x = -4; x <= rowLastMachineX + 2; x += 1) {
+        drafts.push({
+          role: "ingredient-feeder",
+          material: ingredient.name,
+          name: belt.entityName,
+          position: tilePosition(x, feederY),
+          direction: 4,
+        });
+      }
+    });
+
+    const outputY = machineY - 3;
+    outputRows.push(outputY);
+    pipeCrossingRows.push(outputY);
+    addHorizontalBeltCrossings(
+      drafts,
+      "output-belt",
+      planned.material,
+      belt.entityName,
+      undergroundName,
+      -3,
+      collectorX - 1,
+      outputY,
+      fluidIngredients.length > 0 ? machineXs : [],
+    );
+
+    machineXs.forEach((centerX, machineIndex) => {
+      drafts.push({
+        role: "machine",
+        material: planned.material,
+        recipe: planned.recipe.id,
+        name: planned.recipe.machine.name,
+        position: tilePosition(centerX, machineY),
+        direction: 0,
+        recipeSetting: planned.recipe.id,
+      });
+      itemIngredients.forEach((ingredient, ingredientIndex) => {
+        drafts.push({
+          role: "input-inserter",
+          material: ingredient.name,
+          recipe: planned.recipe.id,
+          name: ingredientIndex === 0 ? "bulk-inserter" : "long-handed-inserter",
+          position: tilePosition(centerX + (ingredientIndex === 0 ? -1 : 1), machineY + 2),
+          direction: 8,
+        });
+      });
+      drafts.push({
+        role: "output-inserter",
+        material: planned.material,
+        recipe: planned.recipe.id,
+        name: "bulk-inserter",
+        position: tilePosition(centerX + 1, machineY - 2),
+        direction: 8,
+      });
+      if (fluidIngredients.length > 0) {
+        const fluid = fluidIngredients[0];
+        drafts.push({
+          role: "pipe-to-ground",
+          material: fluid.name,
+          recipe: planned.recipe.id,
+          name: "pipe-to-ground",
+          position: tilePosition(centerX, machineY - 4),
+          direction: 0,
+        });
+        drafts.push({
+          role: "pipe-to-ground",
+          material: fluid.name,
+          recipe: planned.recipe.id,
+          name: "pipe-to-ground",
+          position: tilePosition(centerX, machineY - 2),
+          direction: 8,
+        });
+      }
+      if (machineIndex % 2 === 0) {
+        drafts.push({
+          role: "power-pole",
+          name: "medium-electric-pole",
+          position: tilePosition(centerX + 2, machineY + 1),
+        });
+      }
+    });
+
+    if (fluidIngredients.length > 0) {
+      const fluidY = machineY - 5;
+      protectedRows.push(fluidY);
+      for (let x = -2; x <= rowLastMachineX; x += 1) {
+        drafts.push({ role: "pipe", material: fluidIngredients[0].name, name: "pipe", position: tilePosition(x, fluidY) });
+      }
+    }
+  });
+
+  // Same-material row outputs side-feed one collector. This is a lossless
+  // merge because the planner already caps their combined rate at one belt.
+  const minimumOutputY = Math.min(...outputRows);
+  const maximumOutputY = Math.max(...outputRows);
+  for (let y = minimumOutputY; y <= maximumOutputY; y += 1) {
+    drafts.push({
+      role: "output-belt",
+      material: planned.material,
+      name: belt.entityName,
+      position: tilePosition(collectorX, y),
+      direction: y === maximumOutputY ? 4 : 8,
+    });
+  }
+
+  const inputPositions = addBoundaryFanout(
+    drafts,
+    taps,
+    plan,
+    belt.entityName,
+    belt.splitterEntityName,
+    undergroundName,
+    protectedRows,
+    itemIngredients.map((ingredient) => ingredient.name),
+  );
+
+  if (fluidIngredients.length > 0) {
+    const fluid = fluidIngredients[0];
+    const itemPortXs = [...inputPositions.values()].map((position) => Math.floor(position.x));
+    const outerX = itemPortXs.length > 0 ? Math.min(...itemPortXs) : -12;
+    const firstFluidY = rowYs[0] - 5;
+    const lastFluidY = rowYs.at(-1)! - 5;
+    addPumpFreeHorizontalPipe(drafts, fluid.name, outerX, -3, firstFluidY);
+    if (lastFluidY !== firstFluidY) {
+      addVerticalPipe(
+        drafts,
+        fluid.name,
+        -2,
+        firstFluidY + 1,
+        lastFluidY - 1,
+        pipeCrossingRows,
+      );
+    }
+    inputPositions.set(fluid.name, tilePosition(outerX, firstFluidY));
+  }
+
+  connectPowerComponents(drafts);
+  const rotationQuarterTurns = (SIDE_INDEX[inputSide] - SIDE_INDEX.west + 4) % 4;
+  const canonicalOutputSide = INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];
+  const finalOutput = routeCanonicalOutput(
+    drafts,
+    { x: collectorX, y: maximumOutputY },
+    canonicalOutputSide,
+    planned.material,
+    belt.entityName,
+  );
+  return {
+    drafts,
+    inputPositions,
+    outputPosition: tilePosition(finalOutput.x, finalOutput.y),
+    canonicalOutputSide,
+    rotationQuarterTurns,
+  };
+}
+
+/**
+ * Compiles a recursively recognized graph into balanced direct-insertion
+ * islands plus a pitch-four fluid terminal. Immediate one-input and
+ * item-plus-fluid leaf recipes are lowered into dense shelf-packed panels;
+ * other graph shapes remain on the verified general compiler.
+ */
+export function buildHierarchicalLayout(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): CanonicalLayout | undefined {
+  const pattern = detectHierarchicalPattern(plan);
+  if (!pattern) return undefined;
+  const requestedRotationQuarterTurns = (SIDE_INDEX[inputSide] - SIDE_INDEX.west + 4) % 4;
+  // A horizontal reflection puts the western ingress on the east without
+  // rotating Factorio's world-oriented assembler fluid socket. This also
+  // preserves the dense north/south inserter contracts that a 180° rotation
+  // would force onto the socket tile.
+  const reflectX = requestedRotationQuarterTurns === 2;
+  const rotationQuarterTurns = reflectX ? 0 : requestedRotationQuarterTurns;
+  const requiredSolidBoundaries = new Set([
+    pattern.sourceBoundary.name,
+    pattern.primaryBoundary.name,
+    pattern.secondaryBoundary.name,
+  ]);
+  const actualBoundaries = new Set(plan.inputs.map((input) => input.name));
+  const plannedByMaterial = new Map(plan.recipes.map((planned) => [planned.material, planned]));
+  const upstreamLeaves = [...requiredSolidBoundaries]
+    .filter((material) => !actualBoundaries.has(material))
+    .map((material) => plannedByMaterial.get(material));
+  if (upstreamLeaves.some((planned) => !planned ||
+    planned.recipe.ingredients.some((ingredient) => !actualBoundaries.has(ingredient.name))) ||
+    pattern.terminalFluids.some((fluid) => !actualBoundaries.has(fluid.name))) return undefined;
+
+  const belt = BELTS[beltTier];
+  const undergroundName = beltTier === "yellow"
+    ? "underground-belt"
+    : beltTier === "red"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+  const boundaries = requiredSolidBoundaries;
+  const primaryPlan = scaledSubplan(
+    plan,
+    pattern.primary,
+    pattern.primaryForTerminalPerSecond,
+    new Set([pattern.sourceBoundary.name, pattern.primaryBoundary.name]),
+  );
+  const secondaryPlan = scaledSubplan(plan, pattern.secondary, pattern.secondaryForTerminalPerSecond, boundaries);
+  const primaryLayout = buildAnonymousCellLayout(primaryPlan, "west", "east", beltTier);
+  const secondaryLayout = buildAnonymousCellLayout(secondaryPlan, "west", "west", beltTier);
+  if (!primaryLayout || !secondaryLayout) return undefined;
+
+  const islands: Island[] = [
+    { layout: primaryLayout, x: 0, y: 4 },
+    { layout: secondaryLayout, x: 0, y: 22 },
+  ];
+  const drafts: Draft[] = [];
+  islands.forEach((island) => translateIsland(drafts, island));
+  const rawItemTaps = islands.flatMap(translatedInputs);
+  const tapsByLine = new Map<string, PortTap[]>();
+  rawItemTaps.forEach((tap) => {
+    const key = `${tap.material}|${tap.y}`;
+    const entries = tapsByLine.get(key) ?? [];
+    entries.push(tap);
+    tapsByLine.set(key, entries);
+  });
+  const itemTaps = [...tapsByLine.values()].map((entries) => {
+    const ordered = [...entries].sort((left, right) => left.x - right.x);
+    if (ordered.length > 1) {
+      for (let x = ordered[0].x; x < ordered.at(-1)!.x; x += 1) {
+        const occupied = drafts.some((draft) =>
+          Math.floor(draft.position.x) === x && Math.floor(draft.position.y) === ordered[0].y);
+        if (!occupied) drafts.push({
+          role: "input-belt",
+          material: ordered[0].material,
+          name: belt.entityName,
+          position: tilePosition(x, ordered[0].y),
+          direction: 4,
+        });
+      }
+    }
+    return ordered[0];
+  });
+  const secondaryOutputInserters = drafts.filter((draft) =>
+    draft.role === "output-inserter" && draft.recipe === pattern.secondary.recipe.id);
+  const secondaryCollectorY = Math.max(...secondaryOutputInserters.map((draft) => Math.floor(draft.position.y))) + 2;
+  const secondaryCollectorX = Math.max(...drafts
+    .filter((draft) => draft.material === pattern.secondary.material &&
+      draft.role === "output-belt" && Math.floor(draft.position.y) === secondaryCollectorY)
+    .map((draft) => Math.floor(draft.position.x)));
+  for (let index = drafts.length - 1; index >= 0; index -= 1) {
+    const draft = drafts[index];
+    if (draft.material === pattern.secondary.material &&
+      (draft.role === "output-belt" || draft.role === "underground-belt") &&
+      Math.floor(draft.position.y) > secondaryCollectorY) {
+      drafts.splice(index, 1);
+    }
+  }
+  const secondaryCollectorExit = drafts.find((draft) =>
+    draft.material === pattern.secondary.material && draft.role === "output-belt" &&
+    Math.floor(draft.position.x) === secondaryCollectorX && Math.floor(draft.position.y) === secondaryCollectorY);
+  if (!secondaryCollectorExit) throw new Error("The secondary collector has no eastbound exit tile.");
+  secondaryCollectorExit.direction = 4;
+  const terminal = addDirectInsertedTerminal(
+    drafts,
+    pattern,
+    islands[0],
+    { x: secondaryCollectorX, y: secondaryCollectorY, direction: 4 },
+    belt.entityName,
+    undergroundName,
+    rotationQuarterTurns,
+  );
+  const inputPositions = addBoundaryFanout(
+    drafts,
+    itemTaps,
+    plan,
+    belt.entityName,
+    belt.splitterEntityName,
+    undergroundName,
+    terminal.fluidPorts.map((port) => port.y),
+    [...requiredSolidBoundaries],
+  );
+
+  const compiledPanels = upstreamLeaves.map((planned) => {
+    const panel = buildOneInputSourcePanel(planned!, belt.entityName, belt.splitterEntityName) ??
+      buildItemFluidSourcePanel(planned!, belt.entityName);
+    if (!panel) throw new Error(`No compact source-panel primitive matches ${planned!.recipe.id}.`);
+    return { planned: planned!, panel };
+  });
+  const virtualBusRows = [...requiredSolidBoundaries].map((material) =>
+    Math.floor(inputPositions.get(material)!.y));
+  const placedPanelBounds: Array<{ minimumX: number; maximumX: number; minimumY: number; maximumY: number }> = [];
+  const placedPanelConnections: Array<{
+    planned: PlannedRecipe;
+    panel: SourcePanel;
+    placed: { inputs: Map<string, { x: number; y: number }>; output: { x: number; y: number } };
+    virtualPort: { x: number; y: number };
+  }> = [];
+  const coreMinimumX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
+  const coreMaximumX = Math.ceil(Math.max(...drafts.map((draft) => draft.position.x + draftHalfSize(draft).x)));
+  const coreMinimumY = Math.floor(Math.min(...drafts.map((draft) => draft.position.y - draftHalfSize(draft).y)));
+  const targetShelfWidth = coreMaximumX - coreMinimumX;
+  const panelGeometry = compiledPanels.map(({ planned, panel }) => {
+    const minimumX = Math.floor(Math.min(...panel.drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
+    const maximumX = Math.ceil(Math.max(...panel.drafts.map((draft) => draft.position.x + draftHalfSize(draft).x)));
+    const minimumY = Math.floor(Math.min(...panel.drafts.map((draft) => draft.position.y - draftHalfSize(draft).y)));
+    const maximumY = Math.ceil(Math.max(...panel.drafts.map((draft) => draft.position.y + draftHalfSize(draft).y)));
+    return { planned, panel, minimumX, maximumX, minimumY, maximumY, width: maximumX - minimumX, height: maximumY - minimumY };
+  }).sort((left, right) => right.height - left.height || right.width - left.width || left.planned.material.localeCompare(right.planned.material));
+  const shelves: Array<{ width: number; height: number; panels: typeof panelGeometry }> = [];
+  panelGeometry.forEach((geometry) => {
+    const shelf = shelves.find((candidate) => candidate.width + (candidate.panels.length > 0 ? 3 : 0) + geometry.width <= targetShelfWidth);
+    if (shelf) {
+      shelf.width += (shelf.panels.length > 0 ? 3 : 0) + geometry.width;
+      shelf.height = Math.max(shelf.height, geometry.height);
+      shelf.panels.push(geometry);
+    } else {
+      shelves.push({ width: geometry.width, height: geometry.height, panels: [geometry] });
+    }
+  });
+  let shelfBottomY = coreMinimumY - 3;
+  shelves.forEach((shelf) => {
+    const shelfTopY = shelfBottomY - shelf.height;
+    let shelfX = coreMinimumX;
+    shelf.panels.forEach((geometry) => {
+      const { planned, panel } = geometry;
+    const virtualPort = inputPositions.get(planned.material);
+    if (!virtualPort) throw new Error(`Missing virtual leaf port for ${planned.material}.`);
+      const translateX = shelfX - geometry.minimumX;
+      const translateY = shelfTopY - geometry.minimumY;
+    const placed = translateSourcePanel(drafts, panel, translateX, translateY);
+    placedPanelBounds.push({
+        minimumX: geometry.minimumX + translateX,
+        maximumX: geometry.maximumX + translateX,
+        minimumY: geometry.minimumY + translateY,
+        maximumY: geometry.maximumY + translateY,
+    });
+    placedPanelConnections.push({ planned, panel, placed, virtualPort });
+    inputPositions.delete(planned.material);
+    placed.inputs.forEach((position, material) => inputPositions.set(material, position));
+      shelfX += geometry.width + 3;
+    });
+    shelfBottomY = shelfTopY - 3;
+  });
+  const corridorTopY = Math.min(...placedPanelBounds.map((bounds) => bounds.minimumY)) - 4;
+  const sourceApproachRows = placedPanelConnections.map((_, index) => corridorTopY - index * 2);
+  const escapeColumns = placedPanelConnections.map(({ panel, placed }) =>
+    Math.floor(placed.output.x) + (panel.outputDirection === 12 ? -1 : 1));
+  const minimumOccupiedX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x - draftHalfSize(draft).x)));
+  const outerColumns = placedPanelConnections.map((_, index) => minimumOccupiedX - 5 - index * 3);
+  placedPanelConnections.forEach(({ planned, panel, placed, virtualPort }, panelIndex) => {
+    connectShelfPanelToVirtualPort(
+      drafts,
+      planned.material,
+      placed.output,
+      panel.outputDirection,
+      virtualPort,
+      belt.entityName,
+      sourceApproachRows[panelIndex],
+      outerColumns[panelIndex],
+      [...virtualBusRows, ...sourceApproachRows],
+      escapeColumns,
+      outerColumns,
+      undergroundName,
+    );
+  });
+  terminal.fluidPorts.forEach((port) => {
+    inputPositions.set(port.material, tilePosition(-18, port.y));
+    addPumpFreeHorizontalPipe(drafts, port.material, -18, port.x - 1, port.y);
+  });
+  connectPowerComponents(drafts);
+
+  const canonicalOutputSide = reflectX
+    ? outputSide === "east" ? "west" : outputSide === "west" ? "east" : outputSide
+    : INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];
+  const finalOutput = routeCanonicalOutput(
+    drafts,
+    floorPosition(terminal.outputPosition),
+    canonicalOutputSide,
+    pattern.terminal.material,
+    belt.entityName,
+  );
+  const result: CanonicalLayout = {
+    drafts,
+    inputPositions,
+    outputPosition: tilePosition(finalOutput.x, finalOutput.y),
+    canonicalOutputSide,
+    rotationQuarterTurns,
+  };
+  if (!reflectX) return result;
+  const reflectedDirection = (direction: CardinalDirection | undefined): CardinalDirection | undefined => {
+    if (direction === 4) return 12;
+    if (direction === 12) return 4;
+    return direction;
+  };
+  return {
+    drafts: result.drafts.map((draft) => ({
+      ...draft,
+      position: { x: -draft.position.x, y: draft.position.y },
+      direction: reflectedDirection(draft.direction),
+      ...(draft.outputPriority
+        ? { outputPriority: draft.outputPriority === "left" ? "right" as const : "left" as const }
+        : {}),
+    })),
+    inputPositions: new Map([...result.inputPositions].map(([material, position]) => [material, {
+      x: -position.x,
+      y: position.y,
+    }])),
+    outputPosition: { x: -result.outputPosition.x, y: result.outputPosition.y },
+    canonicalOutputSide: outputSide,
+    rotationQuarterTurns: 0,
+  };
+}

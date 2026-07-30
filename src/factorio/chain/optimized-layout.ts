@@ -11,10 +11,13 @@ import {
   type ProductionBlockContract,
 } from "./optimizer";
 import { buildAnonymousCellLayout } from "./motif-layout";
+import { buildBoundaryRecipeLayout, buildHierarchicalLayout } from "./hierarchical-layout";
 import type { ChainPlan, ChainEntityRole, MaterialType } from "./types";
 
 export type SpatialLayoutPolicyId =
   | "anonymous-cell"
+  | "boundary-recipe"
+  | "hierarchical-islands"
   | "micro"
   | "dense"
   | "compact"
@@ -1795,6 +1798,34 @@ export function buildSpatialLayoutCandidates(
   const candidates: Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> = [];
   const errors: string[] = [];
   try {
+    const boundaryLayout = buildBoundaryRecipeLayout(plan, inputSide, outputSide, beltTier);
+    if (boundaryLayout) {
+      assertCollisionFreeCandidate(boundaryLayout);
+      assertUndergroundPairing(boundaryLayout);
+      assertMaterialIsolation(boundaryLayout);
+      candidates.push({
+        layout: boundaryLayout,
+        metrics: measureSpatialLayout(boundaryLayout, "boundary-recipe"),
+      });
+    }
+  } catch (error) {
+    errors.push(`boundary-recipe: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);
+    if (hierarchicalLayout) {
+      assertCollisionFreeCandidate(hierarchicalLayout);
+      assertUndergroundPairing(hierarchicalLayout);
+      assertMaterialIsolation(hierarchicalLayout);
+      candidates.push({
+        layout: hierarchicalLayout,
+        metrics: measureSpatialLayout(hierarchicalLayout, "hierarchical-islands"),
+      });
+    }
+  } catch (error) {
+    errors.push(`hierarchical-islands: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
     const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
     if (cellLayout) {
       assertCollisionFreeCandidate(cellLayout);
@@ -1830,6 +1861,40 @@ export function diagnoseSpatialLayoutPolicies(
   beltTier: keyof typeof BELTS,
 ): Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> {
   const diagnostics: Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> = [];
+  try {
+    const boundaryLayout = buildBoundaryRecipeLayout(plan, inputSide, outputSide, beltTier);
+    if (boundaryLayout) {
+      assertCollisionFreeCandidate(boundaryLayout);
+      assertUndergroundPairing(boundaryLayout);
+      assertMaterialIsolation(boundaryLayout);
+      diagnostics.push({
+        policy: "boundary-recipe",
+        metrics: measureSpatialLayout(boundaryLayout, "boundary-recipe"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "boundary-recipe",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);
+    if (hierarchicalLayout) {
+      assertCollisionFreeCandidate(hierarchicalLayout);
+      assertUndergroundPairing(hierarchicalLayout);
+      assertMaterialIsolation(hierarchicalLayout);
+      diagnostics.push({
+        policy: "hierarchical-islands",
+        metrics: measureSpatialLayout(hierarchicalLayout, "hierarchical-islands"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "hierarchical-islands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   try {
     const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
     if (cellLayout) {
