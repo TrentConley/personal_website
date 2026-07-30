@@ -53,30 +53,46 @@ const INSERTER_SLOTS_PER_MACHINE_SIDE = 3;
 function transportSizedMachineCount(
   recipeMinimum: number,
   outputPerSecond: number,
+  outputType: MaterialType,
   ingredients: PhysicalIngredientFlow[],
+  kind: ProductionBlockKind,
 ): number {
   const solids = ingredients.filter((ingredient) => ingredient.type === "item");
-  const outputMinimum = Math.ceil(
-    outputPerSecond /
-      (SAFE_BULK_INSERTER_ITEMS_PER_SECOND * INSERTER_SLOTS_PER_MACHINE_SIDE) -
-      1e-12,
-  );
-  let machineCount = Math.max(recipeMinimum, outputMinimum, 1);
+  let machineCount = Math.max(recipeMinimum, 1);
   while (true) {
     const slots = solids.map((ingredient, index) => Math.max(
       1,
       Math.ceil(
         ingredient.perSecond /
           machineCount /
-          (index % 2 === 0
+          (kind === "multi-input-row"
+            ? index === 0
+              ? SAFE_BULK_INSERTER_ITEMS_PER_SECOND
+              : SAFE_LONG_HANDED_INSERTER_ITEMS_PER_SECOND
+            : index % 2 === 0
             ? SAFE_BULK_INSERTER_ITEMS_PER_SECOND
             : SAFE_LONG_HANDED_INSERTER_ITEMS_PER_SECOND) -
           1e-12,
       ),
     ));
-    const southSlots = slots.slice(0, 2).reduce((sum, count) => sum + count, 0);
-    const northSlots = slots.slice(2).reduce((sum, count) => sum + count, 0);
-    if (southSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE && northSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE) {
+    const outputSlots = outputType === "item"
+      ? Math.max(1, Math.ceil(
+          outputPerSecond / machineCount / SAFE_BULK_INSERTER_ITEMS_PER_SECOND - 1e-12,
+        ))
+      : 0;
+    const fits = kind === "multi-input-row"
+      // This template loads two contracts from the north and shares its south
+      // face between the third contract and product discharge.
+      ? slots.slice(0, 2).reduce((sum, count) => sum + count, 0) <= INSERTER_SLOTS_PER_MACHINE_SIDE &&
+        (slots[2] ?? 0) + outputSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE
+      : kind === "solid-panel"
+        ? slots.reduce((sum, count) => sum + count, 0) <= INSERTER_SLOTS_PER_MACHINE_SIDE &&
+          outputSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE
+        // Fluid rows and radial complex cells allocate one physical arm per
+        // solid contract and one product arm. Add machines until those arms
+        // can sustain the requested rate.
+        : slots.every((count) => count <= 1) && outputSlots <= 1;
+    if (fits) {
       return machineCount;
     }
     machineCount += 1;
@@ -255,10 +271,12 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
           const localMachinesPerRow = transportSizedMachineCount(
             Math.ceil(localRecipeMinimum / localRows),
             perSecond / localRows,
+            "item",
             localIngredients.map((ingredient) => ({
               ...ingredient,
               perSecond: ingredient.perSecond / localRows,
             })),
+            kind,
           );
           const localMachineCount = localMachinesPerRow * localRows;
           const geometry = chooseGeometry(localMachineCount, kind, localRows);
@@ -302,12 +320,14 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
         }
       }
 
+      const kind = blockKind(planned.recipe);
       const sizedMachineCount = transportSizedMachineCount(
         machineCount,
         outputPerSecond,
+        planned.materialType,
         ingredients,
+        kind,
       );
-      const kind = blockKind(planned.recipe);
       const requiredRows = minimumMachineRows(
         outputPerSecond,
         planned.materialType,
@@ -316,10 +336,12 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
       const rowSizedMachineCount = transportSizedMachineCount(
         Math.ceil(machineCount / requiredRows),
         outputPerSecond / requiredRows,
+        planned.materialType,
         ingredients.map((ingredient) => ({
           ...ingredient,
           perSecond: ingredient.perSecond / requiredRows,
         })),
+        kind,
       ) * requiredRows;
       const physicalMachineCount = Math.max(sizedMachineCount, rowSizedMachineCount, requiredRows);
       const geometry = chooseGeometry(physicalMachineCount, kind, requiredRows);

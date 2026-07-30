@@ -4,7 +4,7 @@ import { BELTS } from "../core/throughput";
 import { BELT_TIERS, SIDES } from "../core/types";
 import type { BlueprintDocument } from "../core/types";
 import { materialType } from "./catalog";
-import { buildCanonicalLayout, finalizeLayout } from "./layout";
+import { finalizeLayout } from "./layout";
 import { buildSpatialLayoutCandidates } from "./optimized-layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
 import type { ChainGeneratorConfig, GeneratedChainBlueprint } from "./types";
@@ -22,23 +22,17 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
   }
   if (!BELT_TIERS.includes(resolved.beltTier)) throw new Error("Belt tier must be yellow, red, or blue.");
   const plan = planChain(resolved);
-  const hasComplexRecipe = plan.recipes.some(
-    (recipe) => {
-      const solidCount = recipe.ingredientRates.filter((ingredient) => ingredient.type === "item").length;
-      const hasFluid = recipe.ingredientRates.some((ingredient) => ingredient.type === "fluid") ||
-        recipe.materialType === "fluid";
-      return solidCount > 4 || (solidCount > 3 && hasFluid && resolved.inputSide !== "west");
-    },
+  // Every emitted blueprint must come from a compiler that passed collision,
+  // underground-pairing, and material-isolation validation. Unsupported graph
+  // shapes fail here instead of silently dropping to the legacy linear bus.
+  const spatialCandidates = buildSpatialLayoutCandidates(
+    plan,
+    resolved.inputSide,
+    resolved.outputSide,
+    resolved.beltTier,
   );
-  const spatialCandidates = hasComplexRecipe
-    ? []
-    : buildSpatialLayoutCandidates(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier);
   const selectedSpatialCandidate = spatialCandidates[0];
-  const layout = finalizeLayout(
-    hasComplexRecipe
-      ? buildCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier)
-      : selectedSpatialCandidate.layout,
-  );
+  const layout = finalizeLayout(selectedSpatialCandidate.layout);
   const firstItemInput = plan.inputs.find((input) => input.type === "item");
   const icons = [
     ...(materialType(plan.target) === "item"
@@ -91,21 +85,17 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
         plan.targetType === "item" ? BELTS[resolved.beltTier].itemsPerSecond : resolved.pipeCapacityPerSecond,
     },
     itemCost,
-    ...(selectedSpatialCandidate
-      ? {
-          spatialOptimization: {
-            strategy: "anonymous-geometry-compiler-v3" as const,
-            policy: selectedSpatialCandidate.metrics.policy,
-            candidatesAccepted: spatialCandidates.length,
-            width: selectedSpatialCandidate.metrics.width,
-            height: selectedSpatialCandidate.metrics.height,
-            area: selectedSpatialCandidate.metrics.area,
-            transportEntities: selectedSpatialCandidate.metrics.transportEntities,
-            undergroundEntities: selectedSpatialCandidate.metrics.undergroundEntities,
-            score: selectedSpatialCandidate.metrics.score,
-          },
-        }
-      : {}),
+    spatialOptimization: {
+      strategy: "anonymous-geometry-compiler-v3" as const,
+      policy: selectedSpatialCandidate.metrics.policy,
+      candidatesAccepted: spatialCandidates.length,
+      width: selectedSpatialCandidate.metrics.width,
+      height: selectedSpatialCandidate.metrics.height,
+      area: selectedSpatialCandidate.metrics.area,
+      transportEntities: selectedSpatialCandidate.metrics.transportEntities,
+      undergroundEntities: selectedSpatialCandidate.metrics.undergroundEntities,
+      score: selectedSpatialCandidate.metrics.score,
+    },
     warnings: [
       ...(plan.clamped
         ? [`Output was clamped from ${plan.requestedOutputPerSecond}/s to ${plan.effectiveOutputPerSecond}/s by ${plan.limitingConstraints.map((constraint) => constraint.explanation).join(" ")}`]

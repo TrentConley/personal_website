@@ -18,11 +18,7 @@ export type SpatialLayoutPolicyId =
   | "anonymous-cell"
   | "boundary-recipe"
   | "hierarchical-islands"
-  | "micro"
-  | "dense"
-  | "compact"
-  | "compact-fluid"
-  | "conservative";
+  | "adaptive-production-graph";
 
 interface InputTap {
   materialId: string;
@@ -52,7 +48,6 @@ interface PlacedBlock {
 }
 
 export interface SpatialLayoutPolicy {
-  id: Exclude<SpatialLayoutPolicyId, "anonymous-cell">;
   busPitch: number;
   busToMachineGap: number;
   trackPitch: number;
@@ -75,9 +70,12 @@ export interface SpatialLayoutMetrics {
   score: number;
 }
 
-const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
+// These are search coordinates for one production-graph compiler, not a
+// policy ladder. Every coordinate is independently routed and validated; the
+// lowest measured spatial cost wins. A coordinate is accepted only on its own
+// routing and physical-validation result.
+const ADAPTIVE_GEOMETRY_SEARCH: readonly SpatialLayoutPolicy[] = [
   {
-    id: "micro",
     busPitch: 4,
     busToMachineGap: 8,
     trackPitch: 2,
@@ -89,7 +87,6 @@ const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
     factoryEndGap: 4,
   },
   {
-    id: "dense",
     busPitch: 4,
     busToMachineGap: 10,
     trackPitch: 2,
@@ -101,7 +98,6 @@ const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
     factoryEndGap: 6,
   },
   {
-    id: "compact",
     busPitch: 3,
     busToMachineGap: 10,
     trackPitch: 2,
@@ -113,7 +109,6 @@ const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
     factoryEndGap: 6,
   },
   {
-    id: "compact-fluid",
     busPitch: 4,
     busToMachineGap: 10,
     trackPitch: 2,
@@ -123,18 +118,6 @@ const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
     blockGap: 6,
     depthGap: 8,
     factoryEndGap: 6,
-  },
-  {
-    id: "conservative",
-    busPitch: 4,
-    busToMachineGap: 12,
-    trackPitch: 2,
-    ingressPadding: 10,
-    machineOutputGap: 4,
-    outputPadding: 4,
-    blockGap: 6,
-    depthGap: 24,
-    factoryEndGap: 28,
   },
 ] as const;
 
@@ -1856,15 +1839,18 @@ export function buildSpatialLayoutCandidates(
   } catch (error) {
     errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
   }
-  for (const policy of SPATIAL_LAYOUT_POLICIES) {
+  for (const [variantIndex, policy] of ADAPTIVE_GEOMETRY_SEARCH.entries()) {
     try {
       const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
       assertCollisionFreeCandidate(layout);
       assertUndergroundPairing(layout);
       assertMaterialIsolation(layout);
-      candidates.push({ layout, metrics: measureSpatialLayout(layout, policy.id) });
+      candidates.push({
+        layout,
+        metrics: measureSpatialLayout(layout, "adaptive-production-graph"),
+      });
     } catch (error) {
-      errors.push(`${policy.id}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`adaptive-production-graph[${variantIndex + 1}]: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   if (candidates.length === 0) {
@@ -1926,17 +1912,30 @@ export function diagnoseSpatialLayoutPolicies(
   } catch (error) {
     diagnostics.push({ policy: "anonymous-cell", error: error instanceof Error ? error.message : String(error) });
   }
-  diagnostics.push(...SPATIAL_LAYOUT_POLICIES.map((policy) => {
+  const adaptiveDiagnostics = ADAPTIVE_GEOMETRY_SEARCH.map((policy) => {
     try {
       const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
       assertCollisionFreeCandidate(layout);
       assertUndergroundPairing(layout);
       assertMaterialIsolation(layout);
-      return { policy: policy.id, metrics: measureSpatialLayout(layout, policy.id) };
+      return {
+        policy: "adaptive-production-graph" as const,
+        metrics: measureSpatialLayout(layout, "adaptive-production-graph"),
+      };
     } catch (error) {
-      return { policy: policy.id, error: error instanceof Error ? error.message : String(error) };
+      return {
+        policy: "adaptive-production-graph" as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
-  }));
+  });
+  const acceptedAdaptive = adaptiveDiagnostics
+    .filter((diagnostic) => diagnostic.metrics !== undefined)
+    .sort((left, right) => left.metrics!.score - right.metrics!.score);
+  diagnostics.push(acceptedAdaptive[0] ?? {
+    policy: "adaptive-production-graph",
+    error: adaptiveDiagnostics.map((diagnostic) => diagnostic.error).filter(Boolean).join(" "),
+  });
   return diagnostics;
 }
 

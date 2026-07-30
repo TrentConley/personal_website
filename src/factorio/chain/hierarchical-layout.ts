@@ -1418,11 +1418,20 @@ function addBoundaryFanout(
   const inputPositions = new Map<string, { x: number; y: number }>();
   const materialOrder = requestedMaterialOrder ??
     plan.inputs.filter((input) => input.type === "item").map((input) => input.name);
-  const busBaseY = Math.min(-6, ...protectedRows.map((row) => row - 3));
+  const busPitch = materialOrder.length > 4 ? 4 : 3;
+  // Keep two surface tiles between the outer bus stack and every terminal
+  // tap. An underground output cannot turn on its emergence tile, so placing
+  // a bus immediately beside a north-face feeder creates an unpairable final
+  // crossing even though the geometric envelope is otherwise collision-free.
+  const busBaseY = Math.min(
+    -6,
+    ...protectedRows.map((row) => row - 3),
+    ...taps.map((tap) => tap.y - 4),
+  );
   const boundaryBusRows = [
     -2, // shared fluid ingress; item branches tunnel beneath it
     ...protectedRows,
-    ...materialOrder.flatMap((_, index) => [busBaseY - index * 3, busBaseY + 1 - index * 3]),
+    ...materialOrder.flatMap((_, index) => [busBaseY - index * busPitch, busBaseY + 1 - index * busPitch]),
   ];
   const branchXByTap = new Map<PortTap, number>();
   let branchIndex = 0;
@@ -1443,7 +1452,7 @@ function addBoundaryFanout(
   materialOrder.forEach((material, materialIndex) => {
     const materialTaps = taps.filter((tap) => tap.material === material).sort((left, right) => left.y - right.y);
     if (materialTaps.length === 0) return;
-    const busY = busBaseY - materialIndex * 3;
+    const busY = busBaseY - materialIndex * busPitch;
     const branchXs = materialTaps.map((tap) => branchXByTap.get(tap)!);
     const startX = globalStartX;
     const endX = Math.max(...branchXs);
@@ -1487,6 +1496,92 @@ function addBoundaryFanout(
           ...existingVerticalBeltXs.filter((candidate) => candidate !== branchX),
         ],
       );
+    });
+  });
+  return inputPositions;
+}
+
+/**
+ * Distributes repeated radial-cell contracts with one vertical splitter spine
+ * per material. The regular fanout intentionally gives every tap an isolated
+ * branch column; that is ideal for short rows but grows quadratically when a
+ * high-arity recipe has many machines. Spines keep the same one-belt contract
+ * while reducing that network to O(materials × height + taps × width).
+ */
+function addRadialBoundaryFanout(
+  drafts: Draft[],
+  taps: PortTap[],
+  plan: ChainPlan,
+  beltName: string,
+  splitterName: string,
+  undergroundName: string,
+  requestedMaterialOrder: string[],
+): Map<string, { x: number; y: number }> {
+  const inputPositions = new Map<string, { x: number; y: number }>();
+  const materialOrder = requestedMaterialOrder.filter((material, index, all) =>
+    all.indexOf(material) === index && taps.some((tap) => tap.material === material));
+  const minimumTapY = Math.min(...taps.map((tap) => tap.y));
+  const portRows = materialOrder.map((_, index) => minimumTapY - 8 - index * 4);
+  const trunkXs = materialOrder.map((_, index) => -10 - index * 3);
+  const startX = Math.min(...trunkXs) - 6;
+
+  materialOrder.forEach((material, materialIndex) => {
+    const trunkX = trunkXs[materialIndex];
+    const portY = portRows[materialIndex];
+    addBeltPath(
+      drafts,
+      "input-belt",
+      material,
+      beltName,
+      horizontalPoints(startX, trunkX, portY),
+      8,
+    );
+    inputPositions.set(material, tilePosition(startX, portY));
+
+    const materialTaps = taps
+      .filter((tap) => tap.material === material)
+      .sort((left, right) => left.y - right.y);
+    let cursorY = portY + 1;
+    materialTaps.forEach((tap) => {
+      if (cursorY <= tap.y - 2) {
+        addVerticalBelt(
+          drafts,
+          material,
+          beltName,
+          undergroundName,
+          trunkX,
+          cursorY,
+          tap.y - 2,
+          portRows.filter((row) => row > cursorY && row < tap.y - 2),
+          8,
+        );
+      }
+      drafts.push({
+        role: "splitter",
+        material,
+        name: splitterName,
+        position: { x: trunkX + 1, y: tap.y - 0.5 },
+        direction: 8,
+      });
+      drafts.push({
+        role: "ingredient-branch",
+        material,
+        name: beltName,
+        position: tilePosition(trunkX, tap.y),
+        direction: 8,
+      });
+      addHorizontalBeltCrossings(
+        drafts,
+        "input-belt",
+        material,
+        beltName,
+        undergroundName,
+        trunkX + 1,
+        tap.x - 1,
+        tap.y,
+        trunkXs.filter((candidate) => candidate !== trunkX),
+      );
+      cursorY = tap.y + 1;
     });
   });
   return inputPositions;
@@ -1951,12 +2046,245 @@ function addDirectInsertedTerminal(
   };
 }
 
+const SAFE_RADIAL_INSERTER_ITEMS_PER_SECOND = 2.31;
+
+/**
+ * Low-volume, high-arity equipment recipes need more contracts than two
+ * parallel belt faces can expose. Compile them into repeated radial cells:
+ * every ingredient keeps its own belt and bulk inserter, while additional
+ * arms for a hot ingredient are derived from its flow rather than from the
+ * recipe name. Eleven input positions remain after reserving the east-center
+ * tile for product discharge.
+ */
+function buildRadialBoundaryRecipeLayout(
+  plan: ChainPlan,
+  planned: PlannedRecipe,
+  itemIngredients: Array<CatalogAmount & { perSecond: number }>,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): CanonicalLayout | undefined {
+  if (itemIngredients.length < 5 || itemIngredients.length > 8) return undefined;
+  const belt = BELTS[beltTier];
+  const undergroundName = beltTier === "yellow"
+    ? "underground-belt"
+    : beltTier === "red"
+      ? "fast-underground-belt"
+      : "express-underground-belt";
+  let machineCount = planned.machineCount;
+  const requiredArms = (count: number): number => itemIngredients.reduce(
+    (sum, ingredient) => sum + Math.max(1, Math.ceil(
+      ingredient.perSecond / count / SAFE_RADIAL_INSERTER_ITEMS_PER_SECOND - 1e-12,
+    )),
+    0,
+  );
+  while (requiredArms(machineCount) > 11 ||
+    planned.outputPerSecond / machineCount > SAFE_RADIAL_INSERTER_ITEMS_PER_SECOND + 1e-12) {
+    machineCount += 1;
+  }
+  const armMaterials = itemIngredients.flatMap((ingredient) => Array.from(
+    { length: Math.max(1, Math.ceil(
+      ingredient.perSecond / machineCount / SAFE_RADIAL_INSERTER_ITEMS_PER_SECOND - 1e-12,
+    )) },
+    () => ingredient,
+  ));
+  if (armMaterials.length > 11) throw new Error(`${planned.recipe.id} exceeds the radial input perimeter.`);
+
+  const drafts: Draft[] = [];
+  const taps: PortTap[] = [];
+  const cellPitch = 40;
+  const centerYs = Array.from({ length: machineCount }, (_, index) => index * cellPitch);
+  const collectorX = 8;
+  const topRouteOffsets = [-18, -14, -10];
+  const bottomRouteOffsets = [10, 14, 18];
+
+  centerYs.forEach((machineY) => {
+    const localRouteRows = [
+      ...topRouteOffsets.map((offset) => machineY + offset),
+      ...bottomRouteOffsets.map((offset) => machineY + offset),
+      machineY - 8,
+      machineY + 8,
+      machineY - 6,
+      machineY,
+      machineY + 6,
+    ];
+    armMaterials.forEach((ingredient, armIndex) => {
+      if (armIndex < 3) {
+        const pickupX = armIndex - 1;
+        const routeY = machineY + topRouteOffsets[armIndex];
+        taps.push({ material: ingredient.name, type: "item", x: -4, y: routeY });
+        addBeltPath(
+          drafts,
+          "ingredient-feeder",
+          ingredient.name,
+          belt.entityName,
+          horizontalPoints(-4, pickupX, routeY),
+          8,
+        );
+        addVerticalBelt(
+          drafts,
+          ingredient.name,
+          belt.entityName,
+          undergroundName,
+          pickupX,
+          routeY + 1,
+          machineY - 3,
+          localRouteRows,
+          8,
+        );
+        drafts.push({ role: "input-inserter", material: ingredient.name, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(pickupX, machineY - 2), direction: 0 });
+      } else if (armIndex < 6) {
+        const pickupX = armIndex - 4;
+        const routeY = machineY + bottomRouteOffsets[armIndex - 3];
+        taps.push({ material: ingredient.name, type: "item", x: -4, y: routeY });
+        addBeltPath(
+          drafts,
+          "ingredient-feeder",
+          ingredient.name,
+          belt.entityName,
+          horizontalPoints(-4, pickupX, routeY),
+          0,
+        );
+        addVerticalBelt(
+          drafts,
+          ingredient.name,
+          belt.entityName,
+          undergroundName,
+          pickupX,
+          routeY - 1,
+          machineY + 3,
+          localRouteRows,
+          0,
+        );
+        drafts.push({ role: "input-inserter", material: ingredient.name, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(pickupX, machineY + 2), direction: 8 });
+      } else if (armIndex < 9) {
+        const pickupY = machineY - 1 + (armIndex - 6);
+        const routeY = machineY + [-6, 0, 6][armIndex - 6];
+        taps.push({ material: ingredient.name, type: "item", x: -4, y: routeY });
+        addBeltPath(
+          drafts,
+          "ingredient-feeder",
+          ingredient.name,
+          belt.entityName,
+          horizontalPoints(-4, -3, routeY),
+          routeY < pickupY ? 8 : routeY > pickupY ? 0 : 4,
+        );
+        if (routeY !== pickupY) {
+          addVerticalBelt(
+            drafts,
+            ingredient.name,
+            belt.entityName,
+            undergroundName,
+            -3,
+            routeY + (routeY < pickupY ? 1 : -1),
+            pickupY,
+            localRouteRows,
+            4,
+          );
+        }
+        drafts.push({ role: "input-inserter", material: ingredient.name, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(-2, pickupY), direction: 12 });
+      } else {
+        const upper = armIndex === 9;
+        const pickupY = machineY + (upper ? -1 : 1);
+        const routeY = machineY + (upper ? -8 : 8);
+        taps.push({ material: ingredient.name, type: "item", x: -4, y: routeY });
+        addBeltPath(
+          drafts,
+          "ingredient-feeder",
+          ingredient.name,
+          belt.entityName,
+          horizontalPoints(-4, 3, routeY),
+          upper ? 8 : 0,
+        );
+        addVerticalBelt(
+          drafts,
+          ingredient.name,
+          belt.entityName,
+          undergroundName,
+          3,
+          routeY + (upper ? 1 : -1),
+          pickupY,
+          localRouteRows,
+          4,
+        );
+        drafts.push({ role: "input-inserter", material: ingredient.name, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(2, pickupY), direction: 4 });
+      }
+    });
+    drafts.push({
+      role: "machine",
+      material: planned.material,
+      recipe: planned.recipe.id,
+      name: planned.recipe.machine.name,
+      position: tilePosition(0, machineY),
+      direction: 0,
+      recipeSetting: planned.recipe.id,
+    });
+    drafts.push({ role: "output-inserter", material: planned.material, recipe: planned.recipe.id, name: "bulk-inserter", position: tilePosition(2, machineY), direction: 12 });
+    addBeltPath(
+      drafts,
+      "output-belt",
+      planned.material,
+      belt.entityName,
+      horizontalPoints(3, collectorX - 1, machineY),
+      4,
+    );
+    // Three perimeter poles cover all eleven possible radial inserter slots.
+    // A single south-east pole reaches the machine but not the north or west
+    // arms; that error is invisible to collision/import checks and is caught
+    // only by the live Factorio starvation probe.
+    drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(2, machineY - 2) });
+    drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(-2, machineY + 2) });
+    drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(2, machineY + 2) });
+  });
+
+  const firstOutputY = centerYs[0];
+  const lastOutputY = centerYs.at(-1)!;
+  for (let y = firstOutputY; y <= lastOutputY; y += 1) {
+    drafts.push({
+      role: "output-belt",
+      material: planned.material,
+      name: belt.entityName,
+      position: tilePosition(collectorX, y),
+      direction: y === lastOutputY ? 4 : 8,
+    });
+  }
+  const inputPositions = addRadialBoundaryFanout(
+    drafts,
+    taps,
+    plan,
+    belt.entityName,
+    belt.splitterEntityName,
+    undergroundName,
+    itemIngredients.map((ingredient) => ingredient.name),
+  );
+  connectPowerComponents(drafts);
+  const rotationQuarterTurns = (SIDE_INDEX[inputSide] - SIDE_INDEX.west + 4) % 4;
+  const canonicalOutputSide = INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];
+  const finalOutput = routeCanonicalOutput(
+    drafts,
+    { x: collectorX, y: lastOutputY },
+    canonicalOutputSide,
+    planned.material,
+    belt.entityName,
+  );
+  return {
+    drafts,
+    inputPositions,
+    outputPosition: tilePosition(finalOutput.x, finalOutput.y),
+    canonicalOutputSide,
+    rotationQuarterTurns,
+  };
+}
+
 /**
  * Compiles a single boundary-fed recipe as a set of short, parallel machine
  * rows.  The row count is chosen from entity geometry, while the existing
  * planner remains responsible for exact rate and inserter-capacity sizing.
  * This is deliberately recipe-name agnostic: it applies to any item recipe
- * with at most two solid contracts and one assembling-machine fluid contract.
+ * with up to four solid contracts and one assembling-machine fluid contract.
+ * Three- and four-input recipes use both machine faces and discharge through
+ * short side branches, avoiding the full-factory bus that these recipes used
+ * to fall back to.
  */
 export function buildBoundaryRecipeLayout(
   plan: ChainPlan,
@@ -1973,8 +2301,21 @@ export function buildBoundaryRecipeLayout(
     .filter((ingredient) => ingredient.type === "item")
     .sort((left, right) => right.perSecond - left.perSecond || left.name.localeCompare(right.name));
   const fluidIngredients = planned.ingredientRates.filter((ingredient) => ingredient.type === "fluid");
-  if (itemIngredients.length > 2 || fluidIngredients.length > 1) return undefined;
-  if (fluidIngredients.length > 0 && planned.recipe.machine.name !== "assembling-machine-3") return undefined;
+  if (itemIngredients.length > 4 && fluidIngredients.length === 0) {
+    return buildRadialBoundaryRecipeLayout(
+      plan,
+      planned,
+      itemIngredients,
+      inputSide,
+      outputSide,
+      beltTier,
+    );
+  }
+  if (itemIngredients.length > 4 || fluidIngredients.length > 1) return undefined;
+  if (fluidIngredients.length > 0 && itemIngredients.length > 3) return undefined;
+  if (fluidIngredients.length > 0 &&
+    planned.recipe.machine.name !== "assembling-machine-3" &&
+    planned.recipe.machine.name !== "chemical-plant") return undefined;
   // Factorio's rotated crafting-with-fluid socket needs the legacy
   // rotation-aware bridge. Keep the compact row for its proven west-facing
   // orientation and let the established compiler handle other rotations.
@@ -1986,13 +2327,15 @@ export function buildBoundaryRecipeLayout(
     : beltTier === "red"
       ? "fast-underground-belt"
       : "express-underground-belt";
+  const usesTwoFaces = itemIngredients.length > 2;
   const rowCapacity = 12;
   const rowCount = Math.max(1, Math.ceil(planned.machineCount / rowCapacity));
   const rowMachines = distributeMachines(planned.machineCount, rowCount);
-  const rowPitch = fluidIngredients.length > 0 ? 12 : 9;
+  const machinePitch = usesTwoFaces ? 6 : 4;
+  const rowPitch = fluidIngredients.length > 0 || usesTwoFaces ? 12 : 9;
   const rowYs = rowMachines.map((_, row) => row * rowPitch);
   const maximumColumns = Math.max(...rowMachines);
-  const lastMachineX = (maximumColumns - 1) * 4;
+  const lastMachineX = (maximumColumns - 1) * machinePitch;
   const collectorX = lastMachineX + 7;
   const drafts: Draft[] = [];
   const taps: PortTap[] = [];
@@ -2002,24 +2345,28 @@ export function buildBoundaryRecipeLayout(
 
   rowMachines.forEach((machineCount, row) => {
     const machineY = rowYs[row];
-    const machineXs = Array.from({ length: machineCount }, (_, index) => index * 4);
+    const machineXs = Array.from({ length: machineCount }, (_, index) => index * machinePitch);
     const rowLastMachineX = machineXs.at(-1)!;
     itemIngredients.forEach((ingredient, ingredientIndex) => {
-      const feederY = machineY + 3 + ingredientIndex;
+      const feederY = ingredientIndex < 2
+        ? machineY + 3 + ingredientIndex
+        : machineY - 3 - (ingredientIndex - 2);
       pipeCrossingRows.push(feederY);
       taps.push({ material: ingredient.name, type: "item", x: -4, y: feederY });
-      for (let x = -4; x <= rowLastMachineX + 2; x += 1) {
-        drafts.push({
-          role: "ingredient-feeder",
-          material: ingredient.name,
-          name: belt.entityName,
-          position: tilePosition(x, feederY),
-          direction: 4,
-        });
-      }
+      addHorizontalBeltCrossings(
+        drafts,
+        "ingredient-feeder",
+        ingredient.name,
+        belt.entityName,
+        undergroundName,
+        -4,
+        rowLastMachineX + 2,
+        feederY,
+        usesTwoFaces ? machineXs.map((centerX) => centerX + 3) : [],
+      );
     });
 
-    const outputY = machineY - 3;
+    const outputY = usesTwoFaces ? machineY + 6 : machineY - 3;
     outputRows.push(outputY);
     pipeCrossingRows.push(outputY);
     addHorizontalBeltCrossings(
@@ -2031,7 +2378,7 @@ export function buildBoundaryRecipeLayout(
       -3,
       collectorX - 1,
       outputY,
-      fluidIngredients.length > 0 ? machineXs : [],
+      !usesTwoFaces && fluidIngredients.length > 0 ? machineXs : [],
     );
 
     machineXs.forEach((centerX, machineIndex) => {
@@ -2045,13 +2392,15 @@ export function buildBoundaryRecipeLayout(
         recipeSetting: planned.recipe.id,
       });
       itemIngredients.forEach((ingredient, ingredientIndex) => {
+        const north = ingredientIndex >= 2;
+        const near = ingredientIndex % 2 === 0;
         drafts.push({
           role: "input-inserter",
           material: ingredient.name,
           recipe: planned.recipe.id,
-          name: ingredientIndex === 0 ? "bulk-inserter" : "long-handed-inserter",
-          position: tilePosition(centerX + (ingredientIndex === 0 ? -1 : 1), machineY + 2),
-          direction: 8,
+          name: near ? "bulk-inserter" : "long-handed-inserter",
+          position: tilePosition(centerX + (near ? -1 : 1), machineY + (north ? -2 : 2)),
+          direction: north ? 0 : 8,
         });
       });
       drafts.push({
@@ -2059,17 +2408,39 @@ export function buildBoundaryRecipeLayout(
         material: planned.material,
         recipe: planned.recipe.id,
         name: "bulk-inserter",
-        position: tilePosition(centerX + 1, machineY - 2),
-        direction: 8,
+        position: usesTwoFaces
+          ? tilePosition(centerX + 2, machineY)
+          : tilePosition(centerX + 1, machineY - 2),
+        direction: usesTwoFaces ? 12 : 8,
       });
+      if (usesTwoFaces) {
+        addVerticalBelt(
+          drafts,
+          planned.material,
+          belt.entityName,
+          undergroundName,
+          centerX + 3,
+          machineY,
+          outputY - 1,
+          itemIngredients
+            .map((_, index) => index < 2
+              ? machineY + 3 + index
+              : machineY - 3 - (index - 2))
+            .filter((crossingY) => crossingY > machineY),
+          8,
+        );
+      }
       if (fluidIngredients.length > 0) {
         const fluid = fluidIngredients[0];
+        const connectorX = planned.recipe.machine.name === "chemical-plant"
+          ? centerX - 1
+          : centerX;
         drafts.push({
           role: "pipe-to-ground",
           material: fluid.name,
           recipe: planned.recipe.id,
           name: "pipe-to-ground",
-          position: tilePosition(centerX, machineY - 4),
+          position: tilePosition(connectorX, machineY - 4),
           direction: 0,
         });
         drafts.push({
@@ -2077,7 +2448,7 @@ export function buildBoundaryRecipeLayout(
           material: fluid.name,
           recipe: planned.recipe.id,
           name: "pipe-to-ground",
-          position: tilePosition(centerX, machineY - 2),
+          position: tilePosition(connectorX, machineY - 2),
           direction: 8,
         });
       }
