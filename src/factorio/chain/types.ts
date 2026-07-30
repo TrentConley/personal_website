@@ -147,5 +147,16 @@ export interface GeneratedChainBlueprint {
   inputPorts: ChainPort[];
   outputPort: ChainPort;
   itemCost: Record<string, number>;
+  spatialOptimization?: {
+    strategy: "bounded-candidate-search-v1";
+    policy: string;
+    candidatesAccepted: number;
+    width: number;
+    height: number;
+    area: number;
+    transportEntities: number;
+    undergroundEntities: number;
+    score: number;
+  };
   warnings: string[];
 }

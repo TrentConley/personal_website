@@ -379,7 +379,7 @@ export function FactorioBlueprintPage() {
                 <div className="factorio-metrics">
                   <div><small>Promised output</small><strong>{generated.result.plan.effectiveOutputPerSecond.toFixed(3)}<span>/s</span></strong><p>{generated.result.plan.clamped ? `Safely clamped from ${rate}/s` : "Requested capacity"}</p></div>
                   <div><small>Machines</small><strong>{generated.result.plan.recipes.reduce((sum, recipe) => sum + recipe.machineCount, 0)}</strong><p>{generated.result.plan.recipes.length} recursive recipes</p></div>
-                  <div><small>Entities</small><strong>{generated.decodedEntityCount.toLocaleString()}</strong><p>Decoded from final string</p></div>
+                  <div><small>Entities</small><strong>{generated.decodedEntityCount.toLocaleString()}</strong><p>{generated.result.spatialOptimization ? `${generated.result.spatialOptimization.width} × ${generated.result.spatialOptimization.height} · ${generated.result.spatialOptimization.policy} packing` : "Decoded from final string"}</p></div>
                 </div>
 
                 {generated.result.warnings.map((warning) => (

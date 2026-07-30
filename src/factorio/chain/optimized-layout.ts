@@ -39,6 +39,93 @@ interface PlacedBlock {
   outputTracks: number[];
 }
 
+export interface SpatialLayoutPolicy {
+  id: "micro" | "dense" | "compact" | "compact-fluid" | "conservative";
+  busPitch: number;
+  busToMachineGap: number;
+  trackPitch: number;
+  ingressPadding: number;
+  machineOutputGap: number;
+  outputPadding: number;
+  blockGap: number;
+  depthGap: number;
+  factoryEndGap: number;
+}
+
+export interface SpatialLayoutMetrics {
+  policy: SpatialLayoutPolicy["id"];
+  width: number;
+  height: number;
+  area: number;
+  entityCount: number;
+  transportEntities: number;
+  undergroundEntities: number;
+  score: number;
+}
+
+const SPATIAL_LAYOUT_POLICIES: readonly SpatialLayoutPolicy[] = [
+  {
+    id: "micro",
+    busPitch: 4,
+    busToMachineGap: 8,
+    trackPitch: 2,
+    ingressPadding: 6,
+    machineOutputGap: 3,
+    outputPadding: 3,
+    blockGap: 4,
+    depthGap: 6,
+    factoryEndGap: 4,
+  },
+  {
+    id: "dense",
+    busPitch: 4,
+    busToMachineGap: 10,
+    trackPitch: 2,
+    ingressPadding: 8,
+    machineOutputGap: 4,
+    outputPadding: 4,
+    blockGap: 4,
+    depthGap: 6,
+    factoryEndGap: 6,
+  },
+  {
+    id: "compact",
+    busPitch: 3,
+    busToMachineGap: 10,
+    trackPitch: 2,
+    ingressPadding: 10,
+    machineOutputGap: 4,
+    outputPadding: 3,
+    blockGap: 6,
+    depthGap: 8,
+    factoryEndGap: 6,
+  },
+  {
+    id: "compact-fluid",
+    busPitch: 4,
+    busToMachineGap: 10,
+    trackPitch: 2,
+    ingressPadding: 10,
+    machineOutputGap: 4,
+    outputPadding: 3,
+    blockGap: 6,
+    depthGap: 8,
+    factoryEndGap: 6,
+  },
+  {
+    id: "conservative",
+    busPitch: 4,
+    busToMachineGap: 12,
+    trackPitch: 2,
+    ingressPadding: 10,
+    machineOutputGap: 4,
+    outputPadding: 4,
+    blockGap: 6,
+    depthGap: 24,
+    factoryEndGap: 28,
+  },
+] as const;
+
 const SIDE_INDEX: Record<Side, number> = { north: 0, east: 1, south: 2, west: 3 };
 const INDEX_SIDE: Side[] = ["north", "east", "south", "west"];
 const SAFE_BULK_INSERTER_ITEMS_PER_SECOND = 2.31;
@@ -925,8 +1012,12 @@ function buildFluidBlock(
 function collisionHalfSize(draft: Draft): { x: number; y: number } {
   if (["assembling-machine-3", "electric-furnace", "chemical-plant"].includes(draft.name)) return { x: 1.35, y: 1.35 };
   if (draft.name === "substation") return { x: 0.85, y: 0.85 };
-  if (draft.name.includes("splitter")) return { x: 0.85, y: 0.35 };
-  if (draft.name === "pump") return { x: 0.35, y: 0.85 };
+  if (draft.name.includes("splitter")) {
+    return draft.direction === 0 || draft.direction === 8 ? { x: 0.85, y: 0.35 } : { x: 0.35, y: 0.85 };
+  }
+  if (draft.name === "pump") {
+    return draft.direction === 0 || draft.direction === 8 ? { x: 0.35, y: 0.85 } : { x: 0.85, y: 0.35 };
+  }
   return { x: 0.32, y: 0.32 };
 }
 
@@ -1191,11 +1282,12 @@ function routeOutput(
   return tilePosition(-6, southY);
 }
 
-export function buildOptimizedCanonicalLayout(
+function buildCanonicalLayoutCandidate(
   plan: ChainPlan,
   inputSide: Side,
   outputSide: Side,
   beltTier: keyof typeof BELTS,
+  policy: SpatialLayoutPolicy,
 ): CanonicalLayout {
   const topology = optimizeProductionTopology(plan);
   if (topology.blocks.some((block) => block.kind === "complex-cell")) {
@@ -1219,24 +1311,24 @@ export function buildOptimizedCanonicalLayout(
     ...topology.blocks.map((block) => block.materialId),
   ].filter((material, index, all) => all.indexOf(material) === index);
   const materialById = new Map(topology.materials.map((material) => [material.id, material]));
-  const busY = new Map(orderedMaterialIds.map((material, index) => [material, index * 4]));
-  const busRows = [...busY.values()];
-  busRows.forEach((row) => horizontalRows.add(row));
-  const machineRegionY = orderedMaterialIds.length * 4 + 12;
+  let busY = new Map(orderedMaterialIds.map((material, index) => [material, index * policy.busPitch]));
+  let busRows = [...busY.values()];
+  const machineRegionY = orderedMaterialIds.length * policy.busPitch + policy.busToMachineGap;
   const placements: PlacedBlock[] = [];
   let cursorX = 8;
+  let lastColumnEndX = cursorX;
   let maximumBottomY = machineRegionY;
 
   for (const depth of topology.depths) {
     const blocks = topology.blocks.filter((block) => block.depth === depth);
     const inputTrackTotal = blocks.reduce((sum, block) => sum + block.machineRows * block.ingredients.length, 0);
     const outputTrackTotal = blocks.reduce((sum, block) => sum + outputTrackCount(block), 0);
-    const ingressWidth = inputTrackTotal * 2 + 10;
+    const ingressWidth = inputTrackTotal * policy.trackPitch + policy.ingressPadding;
     const maximumMachineWidth = Math.max(...blocks.map((block) =>
       block.kind === "fluid-row" ? block.columns * 6 + 8 : block.columns * 4 + 8));
     const machineStartX = cursorX + ingressWidth;
-    const outputStartX = machineStartX + maximumMachineWidth + 4;
-    const columnEndX = outputStartX + outputTrackTotal * 2 + 4;
+    const outputStartX = machineStartX + maximumMachineWidth + policy.machineOutputGap;
+    const columnEndX = outputStartX + outputTrackTotal * policy.trackPitch + policy.outputPadding;
     let inputTrackCursor = 0;
     let outputTrackCursor = 0;
     let stackY = machineRegionY;
@@ -1246,19 +1338,20 @@ export function buildOptimizedCanonicalLayout(
       const outputs = outputTrackCount(block);
       const inputTracks = Array.from(
         { length: inputCount },
-        (_, index) => cursorX + 2 + (inputTrackCursor + index) * 2,
+        (_, index) => cursorX + 2 + (inputTrackCursor + index) * policy.trackPitch,
       );
       const outputTracks = Array.from(
         { length: outputs },
-        (_, index) => outputStartX + (outputTrackCursor + index) * 2,
+        (_, index) => outputStartX + (outputTrackCursor + index) * policy.trackPitch,
       );
       placements.push({ contract: block, machineStartX, baseY: stackY, inputTracks, outputTracks });
       inputTrackCursor += inputCount;
       outputTrackCursor += outputs;
-      stackY += block.estimatedHeight + 6;
+      stackY += block.estimatedHeight + policy.blockGap;
     }
     maximumBottomY = Math.max(maximumBottomY, stackY);
-    cursorX = columnEndX + 24;
+    lastColumnEndX = columnEndX;
+    cursorX = columnEndX + policy.depthGap;
   }
 
   for (const placement of placements) {
@@ -1278,6 +1371,71 @@ export function buildOptimizedCanonicalLayout(
       );
     }
   }
+
+  const factoryEndX = lastColumnEndX + policy.factoryEndGap;
+  const hasNearCapacityItemStream = topology.materials.some((material) =>
+    material.type === "item" && material.perSecond > laneCapacity * 0.8);
+  const deepSharedNetwork = topology.depths.length >= 5 && topology.blocks.length >= 10;
+  const intervalPackingIsSafe = !deepSharedNetwork || !hasNearCapacityItemStream;
+  if (intervalPackingIsSafe) {
+    const boundaryIds = new Set(plan.inputs.map((input) => input.name));
+    const intervals = orderedMaterialIds.map((materialId) => {
+      const producerXs = producerTaps
+        .filter((tap) => tap.materialId === materialId)
+        .map((tap) => tap.x);
+      const consumerXs = inputTaps
+        .filter((tap) => tap.materialId === materialId)
+        .map((tap) => tap.x);
+      const start = boundaryIds.has(materialId)
+        ? -6
+        : producerXs.length > 0
+          ? Math.min(...producerXs)
+          : -6;
+      const end = materialId === plan.target
+        ? factoryEndX + 6
+        : Math.max(start, ...consumerXs);
+      return { materialId, start, end };
+    }).sort((left, right) => left.start - right.start || right.end - left.end ||
+      left.materialId.localeCompare(right.materialId));
+    const laneEnds: number[] = [];
+    const laneByMaterial = new Map<string, number>();
+    for (const interval of intervals) {
+      let lane = laneEnds.findIndex((end) => end + 2 < interval.start);
+      if (lane < 0) {
+        lane = laneEnds.length;
+        laneEnds.push(interval.end);
+      } else {
+        laneEnds[lane] = interval.end;
+      }
+      laneByMaterial.set(interval.materialId, lane);
+    }
+    busY = new Map(orderedMaterialIds.map((material) => [
+      material,
+      laneByMaterial.get(material)! * policy.busPitch,
+    ]));
+    busRows = [...new Set(busY.values())].sort((left, right) => left - right);
+    const packedMachineRegionY = laneEnds.length * policy.busPitch + policy.busToMachineGap;
+    const verticalShift = packedMachineRegionY - machineRegionY;
+    if (verticalShift !== 0) {
+      drafts.forEach((draft) => {
+        draft.position = { ...draft.position, y: draft.position.y + verticalShift };
+      });
+      placements.forEach((placement) => {
+        placement.baseY += verticalShift;
+      });
+      inputTaps.forEach((tap) => {
+        tap.targetY += verticalShift;
+      });
+      producerTaps.forEach((tap) => {
+        tap.startY += verticalShift;
+      });
+      const shiftedRows = [...horizontalRows].map((row) => row + verticalShift);
+      horizontalRows.clear();
+      shiftedRows.forEach((row) => horizontalRows.add(row));
+      maximumBottomY += verticalShift;
+    }
+  }
+  busRows.forEach((row) => horizontalRows.add(row));
 
   connectSolidPowerNetwork(drafts, placements, maximumBottomY + 6);
 
@@ -1379,7 +1537,6 @@ export function buildOptimizedCanonicalLayout(
     }
   }
 
-  const factoryEndX = cursorX + 4;
   for (const materialId of orderedMaterialIds) {
     const material = materialById.get(materialId);
     if (!material) throw new Error(`Missing material contract ${materialId}.`);
@@ -1437,4 +1594,239 @@ export function buildOptimizedCanonicalLayout(
   );
   connectFluidPumpNetwork(drafts, maximumBottomY + 6, factoryEndX, busRows);
   return { drafts, inputPositions, outputPosition, canonicalOutputSide, rotationQuarterTurns };
+}
+
+const TRANSPORT_ROLES = new Set<ChainEntityRole>([
+  "input-belt",
+  "material-bus",
+  "ingredient-branch",
+  "ingredient-feeder",
+  "output-belt",
+  "splitter",
+  "underground-belt",
+  "pipe",
+  "pipe-to-ground",
+]);
+
+function assertCollisionFreeCandidate(layout: CanonicalLayout): void {
+  const buckets = new Map<string, Draft[]>();
+  for (const draft of layout.drafts) {
+    const half = collisionHalfSize(draft);
+    const minimumX = Math.floor(draft.position.x - half.x);
+    const maximumX = Math.floor(draft.position.x + half.x);
+    const minimumY = Math.floor(draft.position.y - half.y);
+    const maximumY = Math.floor(draft.position.y + half.y);
+    const nearby = new Set<Draft>();
+    for (let x = minimumX - 1; x <= maximumX + 1; x += 1) {
+      for (let y = minimumY - 1; y <= maximumY + 1; y += 1) {
+        for (const candidate of buckets.get(`${x},${y}`) ?? []) nearby.add(candidate);
+      }
+    }
+    const collision = [...nearby].find((candidate) => {
+      const candidateHalf = collisionHalfSize(candidate);
+      return Math.abs(candidate.position.x - draft.position.x) < candidateHalf.x + half.x &&
+        Math.abs(candidate.position.y - draft.position.y) < candidateHalf.y + half.y;
+    });
+    if (collision) {
+      throw new Error(
+        `${draft.name} (${draft.role}:${draft.material ?? "-"}) at ${draft.position.x},${draft.position.y} overlaps ` +
+          `${collision.name} (${collision.role}:${collision.material ?? "-"}) at ` +
+          `${collision.position.x},${collision.position.y}.`,
+      );
+    }
+    for (let x = minimumX; x <= maximumX; x += 1) {
+      for (let y = minimumY; y <= maximumY; y += 1) {
+        const key = `${x},${y}`;
+        const entries = buckets.get(key) ?? [];
+        entries.push(draft);
+        buckets.set(key, entries);
+      }
+    }
+  }
+}
+
+function assertUndergroundPairing(layout: CanonicalLayout): void {
+  const endpoints = layout.drafts.filter((draft) => draft.undergroundType !== undefined);
+  const claimedOutputs = new Set<Draft>();
+  const directionVector = (direction: CardinalDirection | undefined): { x: number; y: number } => {
+    if (direction === 0) return { x: 0, y: -1 };
+    if (direction === 4) return { x: 1, y: 0 };
+    if (direction === 8) return { x: 0, y: 1 };
+    if (direction === 12) return { x: -1, y: 0 };
+    throw new Error("Underground belts require a cardinal direction.");
+  };
+  for (const input of endpoints.filter((draft) => draft.undergroundType === "input")) {
+    const vector = directionVector(input.direction);
+    const reach = undergroundReach(input.name);
+    const candidates = endpoints
+      .filter((candidate) => {
+        if (candidate.undergroundType !== "output" || candidate.name !== input.name ||
+          candidate.direction !== input.direction) return false;
+        const deltaX = candidate.position.x - input.position.x;
+        const deltaY = candidate.position.y - input.position.y;
+        const projection = deltaX * vector.x + deltaY * vector.y;
+        const perpendicular = deltaX * vector.y - deltaY * vector.x;
+        return Math.abs(perpendicular) < 1e-9 && projection > 0 && projection <= reach;
+      })
+      .sort((left, right) =>
+        Math.abs(left.position.x - input.position.x) + Math.abs(left.position.y - input.position.y) -
+        Math.abs(right.position.x - input.position.x) - Math.abs(right.position.y - input.position.y));
+    const output = candidates[0];
+    if (!output) {
+      throw new Error(`Unpaired ${input.name} input at ${input.position.x},${input.position.y}.`);
+    }
+    if (output.material !== input.material) {
+      throw new Error(
+        `${input.material} underground belt at ${input.position.x},${input.position.y} would pair with ` +
+          `${output.material} at ${output.position.x},${output.position.y}.`,
+      );
+    }
+    if (claimedOutputs.has(output)) {
+      throw new Error(`Multiple underground inputs would claim the output at ${output.position.x},${output.position.y}.`);
+    }
+    claimedOutputs.add(output);
+  }
+  const outputs = endpoints.filter((draft) => draft.undergroundType === "output");
+  if (claimedOutputs.size !== outputs.length) {
+    throw new Error(`${outputs.length - claimedOutputs.size} underground outputs are not paired by their intended route.`);
+  }
+}
+
+function assertMaterialIsolation(layout: CanonicalLayout): void {
+  const isItemTransport = (draft: Draft): boolean =>
+    draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+    draft.name.includes("splitter");
+  const vector = (direction: CardinalDirection | undefined): { x: number; y: number } => {
+    if (direction === 0) return { x: 0, y: -1 };
+    if (direction === 4) return { x: 1, y: 0 };
+    if (direction === 8) return { x: 0, y: 1 };
+    if (direction === 12) return { x: -1, y: 0 };
+    throw new Error("Item transport entities require a cardinal direction.");
+  };
+  const occupied = (draft: Draft): Array<{ x: number; y: number }> => {
+    if (!draft.name.includes("splitter")) {
+      return [{ x: Math.floor(draft.position.x), y: Math.floor(draft.position.y) }];
+    }
+    if (draft.direction === 4 || draft.direction === 12) {
+      const x = Math.floor(draft.position.x);
+      const topY = Math.floor(draft.position.y) - 1;
+      return [{ x, y: topY }, { x, y: topY + 1 }];
+    }
+    const leftX = Math.floor(draft.position.x) - 1;
+    const y = Math.floor(draft.position.y);
+    return [{ x: leftX, y }, { x: leftX + 1, y }];
+  };
+  const transports = layout.drafts.filter(isItemTransport);
+  const byTile = new Map<string, Draft>();
+  for (const draft of transports) {
+    for (const tile of occupied(draft)) byTile.set(`${tile.x},${tile.y}`, draft);
+  }
+  for (const draft of transports) {
+    if (draft.undergroundType === "input") continue;
+    const step = vector(draft.direction);
+    for (const tile of occupied(draft)) {
+      const next = byTile.get(`${tile.x + step.x},${tile.y + step.y}`);
+      if (next && next.material !== draft.material) {
+        throw new Error(
+          `${draft.material} transport at ${draft.position.x},${draft.position.y} would feed ` +
+            `${next.material} at ${next.position.x},${next.position.y}.`,
+        );
+      }
+    }
+  }
+}
+
+function measureSpatialLayout(
+  layout: CanonicalLayout,
+  policy: SpatialLayoutPolicy,
+): SpatialLayoutMetrics {
+  const extents = layout.drafts.map((draft) => {
+    const half = collisionHalfSize(draft);
+    return {
+      minimumX: draft.position.x - half.x,
+      maximumX: draft.position.x + half.x,
+      minimumY: draft.position.y - half.y,
+      maximumY: draft.position.y + half.y,
+    };
+  });
+  const width = Math.ceil(
+    Math.max(...extents.map((extent) => extent.maximumX)) -
+      Math.min(...extents.map((extent) => extent.minimumX)),
+  );
+  const height = Math.ceil(
+    Math.max(...extents.map((extent) => extent.maximumY)) -
+      Math.min(...extents.map((extent) => extent.minimumY)),
+  );
+  const area = width * height;
+  const transportEntities = layout.drafts.filter((draft) => TRANSPORT_ROLES.has(draft.role)).length;
+  const undergroundEntities = layout.drafts.filter((draft) => draft.role === "underground-belt" ||
+    draft.role === "pipe-to-ground").length;
+  return {
+    policy: policy.id,
+    width,
+    height,
+    area,
+    entityCount: layout.drafts.length,
+    transportEntities,
+    undergroundEntities,
+    score:
+      area * 10 +
+      transportEntities * 2 +
+      undergroundEntities * 8 +
+      Math.max(width, height) * 25,
+  };
+}
+
+export function buildSpatialLayoutCandidates(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> {
+  const candidates: Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> = [];
+  const errors: string[] = [];
+  for (const policy of SPATIAL_LAYOUT_POLICIES) {
+    try {
+      const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
+      assertCollisionFreeCandidate(layout);
+      assertUndergroundPairing(layout);
+      assertMaterialIsolation(layout);
+      candidates.push({ layout, metrics: measureSpatialLayout(layout, policy) });
+    } catch (error) {
+      errors.push(`${policy.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (candidates.length === 0) {
+    throw new Error(`No collision-free spatial layout candidate was found. ${errors.join(" ")}`);
+  }
+  return candidates.sort((left, right) =>
+    left.metrics.score - right.metrics.score || left.metrics.policy.localeCompare(right.metrics.policy));
+}
+
+export function diagnoseSpatialLayoutPolicies(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): Array<{ policy: SpatialLayoutPolicy["id"]; metrics?: SpatialLayoutMetrics; error?: string }> {
+  return SPATIAL_LAYOUT_POLICIES.map((policy) => {
+    try {
+      const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
+      assertCollisionFreeCandidate(layout);
+      assertUndergroundPairing(layout);
+      assertMaterialIsolation(layout);
+      return { policy: policy.id, metrics: measureSpatialLayout(layout, policy) };
+    } catch (error) {
+      return { policy: policy.id, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+}
+
+export function buildOptimizedCanonicalLayout(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): CanonicalLayout {
+  return buildSpatialLayoutCandidates(plan, inputSide, outputSide, beltTier)[0].layout;
 }

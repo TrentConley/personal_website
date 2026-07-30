@@ -5,7 +5,7 @@ import { BELT_TIERS, SIDES } from "../core/types";
 import type { BlueprintDocument } from "../core/types";
 import { materialType } from "./catalog";
 import { buildCanonicalLayout, finalizeLayout } from "./layout";
-import { buildOptimizedCanonicalLayout } from "./optimized-layout";
+import { buildSpatialLayoutCandidates } from "./optimized-layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
 import type { ChainGeneratorConfig, GeneratedChainBlueprint } from "./types";
 
@@ -30,10 +30,14 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
       return solidCount > 4 || (solidCount > 3 && hasFluid && resolved.inputSide !== "west");
     },
   );
+  const spatialCandidates = hasComplexRecipe
+    ? []
+    : buildSpatialLayoutCandidates(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier);
+  const selectedSpatialCandidate = spatialCandidates[0];
   const layout = finalizeLayout(
     hasComplexRecipe
       ? buildCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier)
-      : buildOptimizedCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier),
+      : selectedSpatialCandidate.layout,
   );
   const firstItemInput = plan.inputs.find((input) => input.type === "item");
   const icons = [
@@ -87,6 +91,21 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
         plan.targetType === "item" ? BELTS[resolved.beltTier].itemsPerSecond : resolved.pipeCapacityPerSecond,
     },
     itemCost,
+    ...(selectedSpatialCandidate
+      ? {
+          spatialOptimization: {
+            strategy: "bounded-candidate-search-v1" as const,
+            policy: selectedSpatialCandidate.metrics.policy,
+            candidatesAccepted: spatialCandidates.length,
+            width: selectedSpatialCandidate.metrics.width,
+            height: selectedSpatialCandidate.metrics.height,
+            area: selectedSpatialCandidate.metrics.area,
+            transportEntities: selectedSpatialCandidate.metrics.transportEntities,
+            undergroundEntities: selectedSpatialCandidate.metrics.undergroundEntities,
+            score: selectedSpatialCandidate.metrics.score,
+          },
+        }
+      : {}),
     warnings: [
       ...(plan.clamped
         ? [`Output was clamped from ${plan.requestedOutputPerSecond}/s to ${plan.effectiveOutputPerSecond}/s by ${plan.limitingConstraints.map((constraint) => constraint.explanation).join(" ")}`]
