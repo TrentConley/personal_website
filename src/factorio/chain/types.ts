@@ -17,6 +17,19 @@ export interface ChainGeneratorConfig {
   pipeCapacityPerSecond?: number;
 }
 
+export type ChainGenerationPhase =
+  | "planning"
+  | "routing"
+  | "validating"
+  | "encoding";
+
+export interface ChainGenerationProgress {
+  phase: ChainGenerationPhase;
+  detail: string;
+}
+
+export type ChainGenerationProgressReporter = (progress: ChainGenerationProgress) => void;
+
 export interface CatalogAmount {
   type: MaterialType;
   name: string;

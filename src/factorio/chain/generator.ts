@@ -7,9 +7,16 @@ import { materialType } from "./catalog";
 import { finalizeLayout } from "./layout";
 import { buildSpatialLayoutCandidates } from "./optimized-layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
-import type { ChainGeneratorConfig, GeneratedChainBlueprint } from "./types";
+import type {
+  ChainGenerationProgressReporter,
+  ChainGeneratorConfig,
+  GeneratedChainBlueprint,
+} from "./types";
 
-export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedChainBlueprint {
+export function generateChainBlueprint(
+  config: ChainGeneratorConfig,
+  reportProgress?: ChainGenerationProgressReporter,
+): GeneratedChainBlueprint {
   const resolved = {
     ...config,
     inputSide: config.inputSide ?? "west",
@@ -21,10 +28,18 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
     throw new Error("Input and output sides must be north, east, south, or west.");
   }
   if (!BELT_TIERS.includes(resolved.beltTier)) throw new Error("Belt tier must be yellow, red, or blue.");
+  reportProgress?.({
+    phase: "planning",
+    detail: "Expanding recursive recipes and calculating throughput",
+  });
   const plan = planChain(resolved);
   // Every emitted blueprint must come from a compiler that passed collision,
   // underground-pairing, and material-isolation validation. Unsupported graph
   // shapes fail here instead of silently dropping to the legacy linear bus.
+  reportProgress?.({
+    phase: "routing",
+    detail: "Searching compact machine blocks and routing every belt and pipe",
+  });
   const spatialCandidates = buildSpatialLayoutCandidates(
     plan,
     resolved.inputSide,
@@ -32,6 +47,10 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
     resolved.beltTier,
   );
   const selectedSpatialCandidate = spatialCandidates[0];
+  reportProgress?.({
+    phase: "validating",
+    detail: "Checking collisions, material isolation, and underground pairs",
+  });
   const layout = finalizeLayout(selectedSpatialCandidate.layout);
   const firstItemInput = plan.inputs.find((input) => input.type === "item");
   const icons = [
@@ -56,6 +75,10 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
       version: FACTORIO_VERSION,
     },
   };
+  reportProgress?.({
+    phase: "encoding",
+    detail: "Encoding and verifying the Factorio import string",
+  });
   const blueprintString = encodeBlueprint(document);
   const itemCost = layout.entities.reduce<Record<string, number>>((cost, planned) => {
     cost[planned.entity.name] = (cost[planned.entity.name] ?? 0) + 1;

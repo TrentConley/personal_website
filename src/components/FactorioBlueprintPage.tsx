@@ -1,14 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PRODUCT_GROUPS,
   VANILLA_CATALOG,
   boundaryMaterialsFor,
   directIngredientsFor,
-  generateChainBlueprint,
   recipeFor,
+  type ChainGenerationPhase,
+  type GeneratedChainBlueprint,
   type MaterialRate,
 } from "../factorio/chain";
-import { decodeBlueprint } from "../factorio/core/codec";
+import type {
+  BlueprintGenerationRequest,
+  BlueprintGenerationResponse,
+} from "../factorio/chain/worker-types";
 import { BELT_TIERS, SIDES, type BeltTier, type Side } from "../factorio/core/types";
 import { FactorioBlueprintPreview } from "./FactorioBlueprintPreview";
 
@@ -29,6 +33,24 @@ const ALL_MATERIALS = Object.keys(VANILLA_CATALOG.materialTypes).sort((left, rig
 );
 
 const BARREL_SUFFIX = "-barrel";
+const GENERATION_DEBOUNCE_MS = 180;
+
+const GENERATION_STAGES: ReadonlyArray<{
+  phase: ChainGenerationPhase;
+  label: string;
+}> = [
+  { phase: "planning", label: "Recipe graph" },
+  { phase: "routing", label: "Spatial search" },
+  { phase: "validating", label: "Geometry checks" },
+  { phase: "encoding", label: "Import encoding" },
+];
+
+type GenerationPhase = "queued" | ChainGenerationPhase;
+
+interface GeneratedBlueprint {
+  result: GeneratedChainBlueprint;
+  decodedEntityCount: number;
+}
 
 function title(value: string): string {
   return value
@@ -95,6 +117,14 @@ export function FactorioBlueprintPage() {
   const [beltTier, setBeltTier] = useState<BeltTier>("blue");
   const [copied, setCopied] = useState(false);
   const [ingredientSearch, setIngredientSearch] = useState("");
+  const [generated, setGenerated] = useState<GeneratedBlueprint | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationPhase, setGenerationPhase] = useState<GenerationPhase>("queued");
+  const [generationDetail, setGenerationDetail] = useState("Preparing the factory request");
+  const [generationStartedAt, setGenerationStartedAt] = useState(() => Date.now());
+  const [elapsedMilliseconds, setElapsedMilliseconds] = useState(0);
+  const [isGenerating, setIsGenerating] = useState(true);
+  const requestId = useRef(0);
 
   const selectedInputs = useMemo(() => inputEntries(inputs), [inputs]);
   const selectedInputNames = useMemo(
@@ -119,27 +149,84 @@ export function FactorioBlueprintPage() {
   }, [ingredientSearch]);
   const outputRecipe = recipeFor(output);
 
-  const generated = useMemo(() => {
+  useEffect(() => {
+    const nextRequestId = requestId.current + 1;
+    requestId.current = nextRequestId;
+    const startedAt = Date.now();
+    setGenerationStartedAt(startedAt);
+    setElapsedMilliseconds(0);
+    setGenerationError(null);
+    setGenerationPhase("queued");
+    setGenerationDetail("Preparing the latest factory request");
+    setIsGenerating(true);
+    setCopied(false);
+
+    let config: BlueprintGenerationRequest["config"];
     try {
-      const result = generateChainBlueprint({
+      config = {
         output,
         outputPerSecond: rate,
         inputs: parseInputs(inputs),
         inputSide,
         outputSide,
         beltTier,
-      });
-      const decoded = decodeBlueprint(result.blueprintString);
-      return {
-        result,
-        decodedEntityCount: decoded.blueprint.entities.length,
-      } as const;
+      };
     } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : String(error),
-      } as const;
+      setGenerationError(error instanceof Error ? error.message : String(error));
+      setIsGenerating(false);
+      return;
     }
+
+    let worker: Worker | null = null;
+    const startTimer = window.setTimeout(() => {
+      worker = new Worker(
+        new URL("../factorio/chain/generation.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      worker.onmessage = ({ data }: MessageEvent<BlueprintGenerationResponse>) => {
+        if (data.id !== requestId.current) return;
+        if (data.type === "progress") {
+          setGenerationPhase(data.phase);
+          setGenerationDetail(data.detail);
+          return;
+        }
+        if (data.type === "error") {
+          setGenerationError(data.error);
+          setIsGenerating(false);
+          worker?.terminate();
+          worker = null;
+          return;
+        }
+        setGenerated({ result: data.result, decodedEntityCount: data.decodedEntityCount });
+        setGenerationError(null);
+        setIsGenerating(false);
+        setElapsedMilliseconds(Date.now() - startedAt);
+        worker?.terminate();
+        worker = null;
+      };
+      worker.onerror = (event) => {
+        if (nextRequestId !== requestId.current) return;
+        setGenerationError(event.message || "The blueprint worker stopped unexpectedly.");
+        setIsGenerating(false);
+        worker?.terminate();
+        worker = null;
+      };
+      worker.postMessage({ id: nextRequestId, config } satisfies BlueprintGenerationRequest);
+    }, GENERATION_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      worker?.terminate();
+    };
   }, [beltTier, inputSide, inputs, output, outputSide, rate]);
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const timer = window.setInterval(() => {
+      setElapsedMilliseconds(Date.now() - generationStartedAt);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [generationStartedAt, isGenerating]);
 
   const chooseTarget = (next: string) => {
     setOutput(next);
@@ -162,7 +249,7 @@ export function FactorioBlueprintPage() {
   };
 
   const copyBlueprint = async () => {
-    const result = "result" in generated ? generated.result : undefined;
+    const result = generated?.result;
     if (!result) return;
     await navigator.clipboard.writeText(result.blueprintString);
     setCopied(true);
@@ -170,7 +257,7 @@ export function FactorioBlueprintPage() {
   };
 
   const downloadBlueprint = () => {
-    const result = "result" in generated ? generated.result : undefined;
+    const result = generated?.result;
     if (!result) return;
     const blob = new Blob([`${result.blueprintString}\n`], {
       type: "text/plain",
@@ -178,7 +265,7 @@ export function FactorioBlueprintPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${output}-${result.plan.effectiveOutputPerSecond.toFixed(3)}ps.txt`;
+    anchor.download = `${result.plan.target}-${result.plan.effectiveOutputPerSecond.toFixed(3)}ps.txt`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -360,24 +447,36 @@ export function FactorioBlueprintPage() {
             </label>
           </form>
 
-          <section className="factorio-result" aria-live="polite">
-            {"error" in generated ? (
-              <div className="factorio-error">
+          <section className="factorio-result">
+            {isGenerating && (
+              <GenerationStatus
+                output={output}
+                phase={generationPhase}
+                detail={generationDetail}
+                elapsedMilliseconds={elapsedMilliseconds}
+                hasPreviousResult={Boolean(generated)}
+              />
+            )}
+
+            {generationError ? (
+              <div className="factorio-error" role="alert">
                 <span>!</span>
-                <div><strong>Cannot build this boundary</strong><p>{generated.error}</p></div>
+                <div><strong>Cannot build this boundary</strong><p>{generationError}</p></div>
               </div>
-            ) : (
+            ) : generated ? (
               <>
                 <div className="factorio-result__heading">
                   <div className="factorio-result__title">
                     <MaterialIcon name={generated.result.plan.target} className="factorio-material-icon--large" />
                     <div><small>Generated factory</small><h2>{title(generated.result.plan.target)}</h2></div>
                   </div>
-                  <span className="factorio-valid">✓ Importable envelope</span>
+                  <span className={`factorio-valid${isGenerating ? " is-updating" : ""}`}>
+                    {isGenerating ? "Previous result · updating" : "✓ Importable envelope"}
+                  </span>
                 </div>
 
                 <div className="factorio-metrics">
-                  <div><small>Promised output</small><strong>{generated.result.plan.effectiveOutputPerSecond.toFixed(3)}<span>/s</span></strong><p>{generated.result.plan.clamped ? `Safely clamped from ${rate}/s` : "Requested capacity"}</p></div>
+                  <div><small>Promised output</small><strong>{generated.result.plan.effectiveOutputPerSecond.toFixed(3)}<span>/s</span></strong><p>{generated.result.plan.clamped ? `Safely clamped from ${generated.result.plan.requestedOutputPerSecond}/s` : "Requested capacity"}</p></div>
                   <div><small>Machines</small><strong>{generated.result.plan.recipes.reduce((sum, recipe) => sum + recipe.machineCount, 0)}</strong><p>{generated.result.plan.recipes.length} recursive recipes</p></div>
                   <div><small>Entities</small><strong>{generated.decodedEntityCount.toLocaleString()}</strong><p>{generated.result.spatialOptimization ? `${generated.result.spatialOptimization.width} × ${generated.result.spatialOptimization.height} · ${generated.result.spatialOptimization.policy} packing` : "Decoded from final string"}</p></div>
                 </div>
@@ -408,10 +507,10 @@ export function FactorioBlueprintPage() {
                 </div>
 
                 <div className="factorio-actions">
-                  <button type="button" className="factorio-actions__primary" onClick={copyBlueprint}>
-                    {copied ? "✓ Copied" : "Copy blueprint"}
+                  <button type="button" className="factorio-actions__primary" onClick={copyBlueprint} disabled={isGenerating}>
+                    {isGenerating ? "Updating…" : copied ? "✓ Copied" : "Copy blueprint"}
                   </button>
-                  <button type="button" onClick={downloadBlueprint}>Download .txt</button>
+                  <button type="button" onClick={downloadBlueprint} disabled={isGenerating}>Download .txt</button>
                 </div>
                 <textarea
                   className="factorio-blueprint"
@@ -426,10 +525,62 @@ export function FactorioBlueprintPage() {
                 </p>
                 <p className="factorio-icon-credit">Factorio item artwork © Wube Software.</p>
               </>
+            ) : (
+              <div className="factorio-generation-empty" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
             )}
           </section>
         </div>
       </main>
+    </div>
+  );
+}
+
+function GenerationStatus({
+  output,
+  phase,
+  detail,
+  elapsedMilliseconds,
+  hasPreviousResult,
+}: {
+  output: string;
+  phase: GenerationPhase;
+  detail: string;
+  elapsedMilliseconds: number;
+  hasPreviousResult: boolean;
+}) {
+  const activeStage = GENERATION_STAGES.findIndex((stage) => stage.phase === phase);
+  const elapsed = elapsedMilliseconds < 1_000
+    ? "less than a second"
+    : `${(elapsedMilliseconds / 1_000).toFixed(1)}s`;
+
+  return (
+    <div className="factorio-generation" role="status" aria-live="polite" aria-busy="true">
+      <div className="factorio-generation__summary">
+        <span className="factorio-generation__spinner" aria-hidden="true"><i /></span>
+        <div>
+          <small>Generating {title(output)}</small>
+          <strong>{detail}</strong>
+          <p><span aria-hidden="true">{elapsed} elapsed · </span>{hasPreviousResult ? "Previous preview remains interactive" : "Controls remain available"}</p>
+        </div>
+        <b>Working</b>
+      </div>
+      <div className="factorio-generation__activity" aria-hidden="true"><i /></div>
+      <ol className="factorio-generation__stages" aria-label="Blueprint generation stages">
+        {GENERATION_STAGES.map((stage, index) => {
+          const state = phase === "queued"
+            ? (index === 0 ? "is-active" : "")
+            : index < activeStage
+              ? "is-complete"
+              : index === activeStage
+                ? "is-active"
+                : "";
+          return <li className={state} key={stage.phase}><i />{stage.label}</li>;
+        })}
+      </ol>
     </div>
   );
 }

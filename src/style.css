@@ -1782,6 +1782,213 @@ img {
   padding: clamp(1.35rem, 3vw, 2rem);
 }
 
+.factorio-generation {
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+  border: 1px solid rgba(130, 210, 156, 0.25);
+  border-radius: 11px;
+  background: linear-gradient(115deg, rgba(130, 210, 156, 0.09), rgba(8, 12, 9, 0.35));
+}
+
+.factorio-generation__summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.85rem 0.9rem 0.75rem;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.factorio-generation__spinner {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(130, 210, 156, 0.24);
+  border-radius: 50%;
+  background: rgba(9, 15, 11, 0.65);
+}
+
+.factorio-generation__spinner::before,
+.factorio-generation__spinner i {
+  position: absolute;
+  border-radius: 50%;
+  content: "";
+}
+
+.factorio-generation__spinner::before {
+  inset: 7px;
+  border: 2px dotted #82d29c;
+  animation: factorio-spin 2.2s linear infinite;
+}
+
+.factorio-generation__spinner i {
+  inset: 13px;
+  background: #82d29c;
+  box-shadow: 0 0 8px rgba(130, 210, 156, 0.7);
+}
+
+.factorio-generation__summary > div {
+  min-width: 0;
+}
+
+.factorio-generation__summary small {
+  display: block;
+  color: #83a58d;
+  font: 0.51rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.factorio-generation__summary strong {
+  display: block;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  color: #e6ebe4;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-generation__summary p {
+  margin: 0.24rem 0 0;
+  color: #77827a;
+  font-size: 0.56rem;
+}
+
+.factorio-generation__summary > b {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(130, 210, 156, 0.23);
+  border-radius: 999px;
+  color: #9ed7ad;
+  background: rgba(130, 210, 156, 0.06);
+  font: 0.5rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.factorio-generation__activity {
+  height: 2px;
+  overflow: hidden;
+  background: rgba(130, 210, 156, 0.08);
+}
+
+.factorio-generation__activity i {
+  display: block;
+  width: 34%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #82d29c, transparent);
+  animation: factorio-progress 1.25s ease-in-out infinite;
+}
+
+.factorio-generation__stages {
+  display: grid;
+  margin: 0;
+  padding: 0.62rem 0.9rem 0.7rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  list-style: none;
+}
+
+.factorio-generation__stages li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.32rem;
+  overflow: hidden;
+  color: #626c64;
+  font: 0.49rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factorio-generation__stages i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border: 1px solid #4e5850;
+  border-radius: 50%;
+}
+
+.factorio-generation__stages li.is-active {
+  color: #b7d4bf;
+}
+
+.factorio-generation__stages li.is-active i {
+  border-color: #82d29c;
+  background: #82d29c;
+  box-shadow: 0 0 7px rgba(130, 210, 156, 0.72);
+}
+
+.factorio-generation__stages li.is-complete {
+  color: #7e9885;
+}
+
+.factorio-generation__stages li.is-complete i {
+  border-color: #6f9b7b;
+  background: rgba(130, 210, 156, 0.25);
+}
+
+.factorio-generation-empty {
+  display: grid;
+  min-height: 480px;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.factorio-generation-empty span {
+  height: 86px;
+  border: 1px solid rgba(220, 226, 209, 0.06);
+  border-radius: 10px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.015), rgba(130, 210, 156, 0.055), rgba(255, 255, 255, 0.015));
+  background-size: 220% 100%;
+  animation: factorio-skeleton 1.8s ease-in-out infinite;
+}
+
+.factorio-generation-empty span:first-child {
+  height: 62px;
+}
+
+.factorio-generation-empty span:last-child {
+  height: 260px;
+}
+
+.factorio-valid.is-updating {
+  border-color: rgba(230, 173, 88, 0.23);
+  color: #d8b778;
+  background: rgba(230, 173, 88, 0.06);
+}
+
+.factorio-actions button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+@keyframes factorio-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes factorio-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@keyframes factorio-skeleton {
+  0%, 100% { background-position: 100% 0; }
+  50% { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .factorio-generation__spinner::before,
+  .factorio-generation__activity i,
+  .factorio-generation-empty span {
+    animation: none;
+  }
+
+  .factorio-generation__activity i {
+    width: 100%;
+    opacity: 0.45;
+  }
+}
+
 .factorio-result__heading {
   display: flex;
   padding-bottom: 1.3rem;
@@ -2295,6 +2502,19 @@ body.factorio-preview-open {
 
   .factorio-actions {
     flex-direction: column;
+  }
+
+  .factorio-generation__summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .factorio-generation__summary > b {
+    display: none;
+  }
+
+  .factorio-generation__stages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 0.6rem;
   }
 
   .factorio-preview__heading {
