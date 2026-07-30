@@ -94,7 +94,7 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
     ...(selectedSpatialCandidate
       ? {
           spatialOptimization: {
-            strategy: "staged-motif-compiler-v2" as const,
+            strategy: "anonymous-graph-compiler-v3" as const,
             policy: selectedSpatialCandidate.metrics.policy,
             candidatesAccepted: spatialCandidates.length,
             width: selectedSpatialCandidate.metrics.width,

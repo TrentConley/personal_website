@@ -10,11 +10,13 @@ import {
   type PhysicalIngredientFlow,
   type ProductionBlockContract,
 } from "./optimizer";
-import { buildCircuitMotifLayout } from "./motif-layout";
+import { buildAnonymousGraphLayout } from "./anonymous-graph-layout";
+import { buildAnonymousCellLayout } from "./motif-layout";
 import type { ChainPlan, ChainEntityRole, MaterialType } from "./types";
 
 export type SpatialLayoutPolicyId =
-  | "circuit-motif"
+  | "anonymous-cell"
+  | "anonymous-graph"
   | "micro"
   | "dense"
   | "compact"
@@ -49,7 +51,7 @@ interface PlacedBlock {
 }
 
 export interface SpatialLayoutPolicy {
-  id: Exclude<SpatialLayoutPolicyId, "circuit-motif">;
+  id: Exclude<SpatialLayoutPolicyId, "anonymous-cell" | "anonymous-graph">;
   busPitch: number;
   busToMachineGap: number;
   trackPitch: number;
@@ -1794,16 +1796,27 @@ export function buildSpatialLayoutCandidates(
 ): Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> {
   const candidates: Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> = [];
   const errors: string[] = [];
-  const motifLayout = buildCircuitMotifLayout(plan, inputSide, outputSide, beltTier);
-  if (motifLayout) {
-    try {
-      assertCollisionFreeCandidate(motifLayout);
-      assertUndergroundPairing(motifLayout);
-      assertMaterialIsolation(motifLayout);
-      candidates.push({ layout: motifLayout, metrics: measureSpatialLayout(motifLayout, "circuit-motif") });
-    } catch (error) {
-      errors.push(`circuit-motif: ${error instanceof Error ? error.message : String(error)}`);
+  try {
+    const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
+    if (cellLayout) {
+      assertCollisionFreeCandidate(cellLayout);
+      assertUndergroundPairing(cellLayout);
+      assertMaterialIsolation(cellLayout);
+      candidates.push({ layout: cellLayout, metrics: measureSpatialLayout(cellLayout, "anonymous-cell") });
     }
+  } catch (error) {
+    errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const anonymousLayout = buildAnonymousGraphLayout(plan, inputSide, outputSide, beltTier);
+    if (anonymousLayout) {
+      assertCollisionFreeCandidate(anonymousLayout);
+      assertUndergroundPairing(anonymousLayout);
+      assertMaterialIsolation(anonymousLayout);
+      candidates.push({ layout: anonymousLayout, metrics: measureSpatialLayout(anonymousLayout, "anonymous-graph") });
+    }
+  } catch (error) {
+    errors.push(`anonymous-graph: ${error instanceof Error ? error.message : String(error)}`);
   }
   for (const policy of SPATIAL_LAYOUT_POLICIES) {
     try {
@@ -1830,16 +1843,27 @@ export function diagnoseSpatialLayoutPolicies(
   beltTier: keyof typeof BELTS,
 ): Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> {
   const diagnostics: Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> = [];
-  const motifLayout = buildCircuitMotifLayout(plan, inputSide, outputSide, beltTier);
-  if (motifLayout) {
-    try {
-      assertCollisionFreeCandidate(motifLayout);
-      assertUndergroundPairing(motifLayout);
-      assertMaterialIsolation(motifLayout);
-      diagnostics.push({ policy: "circuit-motif", metrics: measureSpatialLayout(motifLayout, "circuit-motif") });
-    } catch (error) {
-      diagnostics.push({ policy: "circuit-motif", error: error instanceof Error ? error.message : String(error) });
+  try {
+    const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
+    if (cellLayout) {
+      assertCollisionFreeCandidate(cellLayout);
+      assertUndergroundPairing(cellLayout);
+      assertMaterialIsolation(cellLayout);
+      diagnostics.push({ policy: "anonymous-cell", metrics: measureSpatialLayout(cellLayout, "anonymous-cell") });
     }
+  } catch (error) {
+    diagnostics.push({ policy: "anonymous-cell", error: error instanceof Error ? error.message : String(error) });
+  }
+  try {
+    const anonymousLayout = buildAnonymousGraphLayout(plan, inputSide, outputSide, beltTier);
+    if (anonymousLayout) {
+      assertCollisionFreeCandidate(anonymousLayout);
+      assertUndergroundPairing(anonymousLayout);
+      assertMaterialIsolation(anonymousLayout);
+      diagnostics.push({ policy: "anonymous-graph", metrics: measureSpatialLayout(anonymousLayout, "anonymous-graph") });
+    }
+  } catch (error) {
+    diagnostics.push({ policy: "anonymous-graph", error: error instanceof Error ? error.message : String(error) });
   }
   diagnostics.push(...SPATIAL_LAYOUT_POLICIES.map((policy) => {
     try {

@@ -181,13 +181,22 @@ function blockKind(recipe: PlannedRecipe["recipe"]): ProductionBlockKind {
 
 /**
  * Converts the exact recipe plan into physical, independently routable blocks.
- * Copper cable is localized per consumer so high-yield cable never becomes a
- * factory-wide transport bottleneck.
+ * Expanding intermediates are localized per consumer so high-volume material
+ * never becomes a factory-wide transport bottleneck. Selection is based only
+ * on flow expansion and graph position; material names are opaque.
  */
 export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology {
-  const recipeByMaterial = new Map(plan.recipes.map((recipe) => [recipe.material, recipe]));
-  const cableRecipe = recipeByMaterial.get("copper-cable");
-  const localizeCable = Boolean(cableRecipe && plan.target !== "copper-cable");
+  const localizedRecipes = new Map(plan.recipes
+    .filter((planned) => {
+      if (planned.material === plan.target || planned.materialType !== "item") return false;
+      if (planned.recipe.ingredients.length === 0 ||
+        planned.recipe.ingredients.some((ingredient) => ingredient.type !== "item")) return false;
+      const inputFlow = planned.ingredientRates.reduce((sum, ingredient) => sum + ingredient.perSecond, 0);
+      const consumers = plan.recipes.filter((candidate) =>
+        candidate.recipe.ingredients.some((ingredient) => ingredient.name === planned.material));
+      return consumers.length > 0 && planned.outputPerSecond > inputFlow * 1.25 + 1e-12;
+    })
+    .map((planned) => [planned.material, planned]));
 
   const materialDepth = new Map<string, number>(plan.inputs.map((input) => [input.name, 0]));
   for (const recipe of plan.recipes) {
@@ -217,7 +226,7 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
   }
 
   for (const planned of plan.recipes) {
-    if (localizeCable && planned.material === "copper-cable") continue;
+    if (localizedRecipes.has(planned.material)) continue;
     const shards = splitCount(planned);
     for (let shard = 0; shard < shards; shard += 1) {
       const outputPerSecond = planned.outputPerSecond / shards;
@@ -228,19 +237,19 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
       const ingredients: PhysicalIngredientFlow[] = [];
       for (const ingredient of planned.ingredientRates) {
         const perSecond = ingredient.perSecond / shards;
-        if (localizeCable && ingredient.name === "copper-cable") {
-          const streamId = `copper-cable@${planned.material}:${shard + 1}`;
-          const localRecipe = cableRecipe!;
+        const localRecipe = localizedRecipes.get(ingredient.name);
+        if (localRecipe) {
+          const streamId = `${localRecipe.material}@${planned.material}:${shard + 1}`;
           const localRecipeMinimum = Math.max(
             1,
             Math.ceil(perSecond / localRecipe.machineCapacityPerSecond - 1e-12),
           );
-          const localIngredients: PhysicalIngredientFlow[] = [{
-            materialId: "copper-plate",
-            name: "copper-plate",
-            type: "item",
-            perSecond: perSecond / 2,
-          }];
+          const localIngredients: PhysicalIngredientFlow[] = localRecipe.ingredientRates.map((localIngredient) => ({
+            materialId: localIngredient.name,
+            name: localIngredient.name,
+            type: localIngredient.type,
+            perSecond: perSecond * localIngredient.perSecond / localRecipe.outputPerSecond,
+          }));
           const kind = blockKind(localRecipe.recipe);
           const localRows = minimumMachineRows(perSecond, "item", localIngredients);
           const localMachinesPerRow = transportSizedMachineCount(
@@ -257,13 +266,13 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
             id: `block:${streamId}`,
             kind,
             materialId: streamId,
-            material: "copper-cable",
+            material: localRecipe.material,
             recipe: localRecipe.recipe,
             outputPerSecond: perSecond,
             machineCount: localMachineCount,
             machineCapacityPerSecond: localRecipe.machineCapacityPerSecond,
             ingredients: localIngredients,
-            depth: Math.max(1, materialDepth.get("copper-cable") ?? 1),
+            depth: Math.max(1, materialDepth.get(localRecipe.material) ?? 1),
             columns: geometry.columns,
             machineRows: geometry.machineRows,
             estimatedWidth: geometry.width,
@@ -272,14 +281,14 @@ export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology 
           });
           addMaterial({
             id: streamId,
-            name: "copper-cable",
+            name: localRecipe.material,
             type: "item",
             perSecond,
             boundary: false,
           });
           ingredients.push({
             materialId: streamId,
-            name: "copper-cable",
+            name: localRecipe.material,
             type: "item",
             perSecond,
           });
