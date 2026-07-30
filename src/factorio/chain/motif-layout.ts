@@ -258,10 +258,16 @@ function buildDownstreamCell(
     addInserter(drafts, "output-inserter", downstream.material, downstream.recipe.id, "long-handed-inserter", x + 1, 8, 0);
   });
   const lastRedX = redXs.at(-1)!;
-  for (let x = startX + 2; x <= lastRedX + 2; x += 8) addPole(drafts, x, 6);
-
   const cableX = Math.max(lastRedX, minimumSourceX);
   const crossingX = cableX + 2;
+  // The last inter-machine pole in an odd-sized row can land exactly on the
+  // vertical cable feeder. Slide that pole one tile outward; it remains
+  // within supply range of the final assembler and keeps the transport lane
+  // collision-free for every row remainder (1 through 6).
+  for (let x = startX + 2; x <= lastRedX + 2; x += 8) {
+    addPole(drafts, x === crossingX ? x + 1 : x, 6);
+  }
+
   addMachine(drafts, pattern.source.material, pattern.source.recipe.id, pattern.source.recipe.machine.name, cableX, -2);
   for (const offset of [-1, 1]) {
     addInserter(drafts, "input-inserter", pattern.sourceInput, pattern.source.recipe.id, "bulk-inserter", cableX + offset, -4, 0);
@@ -317,6 +323,7 @@ export function buildAnonymousCellLayout(
   inputSide: Side,
   outputSide: Side,
   beltTier: keyof typeof BELTS,
+  minimumCellMachines = 0,
 ): CanonicalLayout | undefined {
   const pattern = detectAnonymousCellPattern(plan);
   if (!pattern) return undefined;
@@ -342,7 +349,14 @@ export function buildAnonymousCellLayout(
   const drafts: Draft[] = [];
   const inputPositions = new Map<string, { x: number; y: number }>();
   const cellRate = pattern.cell.outputPerSecond;
-  const greenCells = Math.max(1, Math.ceil(cellRate / pattern.cellCapacity - 1e-12));
+  // Standalone cells remain nominal-capacity sized (their measured designs
+  // already meet throughput). A direct-insertion parent can require a larger
+  // paired row so every terminal machine has its capacity-matched producer.
+  const greenCells = Math.max(
+    1,
+    Math.ceil(cellRate / pattern.cellCapacity - 1e-12),
+    Math.ceil(minimumCellMachines / 2),
+  );
   const redMachineCount = downstreamTarget
     ? pattern.downstream!.machineCount
     : 0;

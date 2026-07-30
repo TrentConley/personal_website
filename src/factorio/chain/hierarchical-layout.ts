@@ -1704,7 +1704,7 @@ function addDirectInsertedTerminal(
       return { x: position.x + primaryIsland.x, y: position.y + primaryIsland.y };
     })
     .sort((left, right) => left.x - right.x || left.y - right.y);
-  if (primaryMachines.length !== pattern.terminal.machineCount ||
+  if (primaryMachines.length < pattern.terminal.machineCount ||
     Math.abs(nominalOutputPerMachine(pattern.primary) -
       pattern.terminal.recipe.ingredients.find((ingredient) => ingredient.name === pattern.primary.material)!.amount *
       pattern.terminal.recipe.machine.craftingSpeed / pattern.terminal.recipe.energySeconds) > 1e-9) {
@@ -1816,20 +1816,6 @@ function addDirectInsertedTerminal(
     }
   });
 
-  // A direct-insertion row is denser than the medium poles in the ratio-cell
-  // primitive were designed to cover. A sparse substation comb powers every
-  // terminal inserter while preserving the compact pitch-four/eight packing.
-  for (let x = firstMachineX + 4; x <= lastMachineX + 4; x += 16) {
-    const candidates = [[x, machineY + 7], [x + 2, machineY + 7], [x, machineY + 8]] as const;
-    const position = candidates.find(([candidateX, candidateY]) => canPlace(drafts, {
-      role: "power-pole",
-      name: "substation",
-      position: tilePosition(candidateX, candidateY),
-    }));
-    if (!position) throw new Error(`Could not power the direct terminal near ${x},${machineY + 7}.`);
-    drafts.push({ role: "power-pole", name: "substation", position: tilePosition(position[0], position[1]) });
-  }
-
   for (const [row, material] of [[outputY, pattern.terminal.material], [secondaryY, pattern.secondary.material]] as const) {
     for (let x = firstMachineX - 4; x <= lastMachineX + 8; x += 1) {
       drafts.push({
@@ -1939,6 +1925,20 @@ function addDirectInsertedTerminal(
     horizontalPoints(routeX + 1, firstMachineX - 5, secondaryY),
     4,
   );
+
+  // Route material first, then fit the terminal's substation comb into the
+  // remaining holes. Doing this in the opposite order made otherwise valid
+  // row remainders collide with a secondary-material escape lane.
+  for (let x = firstMachineX + 4; x <= lastMachineX + 4; x += 16) {
+    const candidates = [[x, machineY + 7], [x + 2, machineY + 7], [x, machineY + 8]] as const;
+    const position = candidates.find(([candidateX, candidateY]) => canPlace(drafts, {
+      role: "power-pole",
+      name: "substation",
+      position: tilePosition(candidateX, candidateY),
+    }));
+    if (!position) throw new Error(`Could not power the direct terminal near ${x},${machineY + 7}.`);
+    drafts.push({ role: "power-pole", name: "substation", position: tilePosition(position[0], position[1]) });
+  }
 
   return {
     fluidPorts: [{
@@ -2212,7 +2212,13 @@ export function buildHierarchicalLayout(
     new Set([pattern.sourceBoundary.name, pattern.primaryBoundary.name]),
   );
   const secondaryPlan = scaledSubplan(plan, pattern.secondary, pattern.secondaryForTerminalPerSecond, boundaries);
-  const primaryLayout = buildAnonymousCellLayout(primaryPlan, "west", "east", beltTier);
+  const primaryLayout = buildAnonymousCellLayout(
+    primaryPlan,
+    "west",
+    "east",
+    beltTier,
+    pattern.terminal.machineCount,
+  );
   const secondaryLayout = buildAnonymousCellLayout(secondaryPlan, "west", "west", beltTier);
   if (!primaryLayout || !secondaryLayout) return undefined;
 
