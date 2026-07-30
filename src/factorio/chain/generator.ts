@@ -5,6 +5,7 @@ import { BELT_TIERS, SIDES } from "../core/types";
 import type { BlueprintDocument } from "../core/types";
 import { materialType } from "./catalog";
 import { buildCanonicalLayout, finalizeLayout } from "./layout";
+import { buildOptimizedCanonicalLayout } from "./optimized-layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
 import type { ChainGeneratorConfig, GeneratedChainBlueprint } from "./types";
 
@@ -21,8 +22,18 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
   }
   if (!BELT_TIERS.includes(resolved.beltTier)) throw new Error("Belt tier must be yellow, red, or blue.");
   const plan = planChain(resolved);
+  const hasComplexRecipe = plan.recipes.some(
+    (recipe) => {
+      const solidCount = recipe.ingredientRates.filter((ingredient) => ingredient.type === "item").length;
+      const hasFluid = recipe.ingredientRates.some((ingredient) => ingredient.type === "fluid") ||
+        recipe.materialType === "fluid";
+      return solidCount > 4 || (solidCount > 3 && hasFluid && resolved.inputSide !== "west");
+    },
+  );
   const layout = finalizeLayout(
-    buildCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier),
+    hasComplexRecipe
+      ? buildCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier)
+      : buildOptimizedCanonicalLayout(plan, resolved.inputSide, resolved.outputSide, resolved.beltTier),
   );
   const firstItemInput = plan.inputs.find((input) => input.type === "item");
   const icons = [
@@ -39,7 +50,7 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
       label: `${plan.target} ${plan.effectiveOutputPerSecond.toFixed(3)}/s • ${resolved.inputSide.toUpperCase()} → ${resolved.outputSide.toUpperCase()}`,
       description:
         `Vanilla Factorio 2.0 recursive factory. Target ${plan.effectiveOutputPerSecond.toFixed(6)} ${plan.target}/s` +
-        `${plan.clamped ? ` (requested ${plan.requestedOutputPerSecond.toFixed(6)}/s; input/output limited)` : ""}. ` +
+        `${plan.clamped ? ` (requested ${plan.requestedOutputPerSecond.toFixed(6)}/s; ${plan.limitingConstraints.map((constraint) => constraint.id).join(", ")})` : ""}. ` +
         `Inputs: ${plan.inputs.map((input) => `${input.name} ${input.requiredPerSecond.toFixed(6)}/s`).join(", ")}. ` +
         "No modules or beacons. Connect any substation to power.",
       icons,
@@ -73,12 +84,12 @@ export function generateChainBlueprint(config: ChainGeneratorConfig): GeneratedC
       position: layout.outputPosition,
       requiredPerSecond: plan.effectiveOutputPerSecond,
       maximumPerSecond:
-        plan.targetType === "item" ? BELTS[resolved.beltTier].itemsPerSecond / 2 : resolved.pipeCapacityPerSecond,
+        plan.targetType === "item" ? BELTS[resolved.beltTier].itemsPerSecond : resolved.pipeCapacityPerSecond,
     },
     itemCost,
     warnings: [
       ...(plan.clamped
-        ? [`Output was clamped from ${plan.requestedOutputPerSecond}/s to ${plan.effectiveOutputPerSecond}/s by an input, output, or internal belt-lane limit.`]
+        ? [`Output was clamped from ${plan.requestedOutputPerSecond}/s to ${plan.effectiveOutputPerSecond}/s by ${plan.limitingConstraints.map((constraint) => constraint.explanation).join(" ")}`]
         : []),
     ],
   };

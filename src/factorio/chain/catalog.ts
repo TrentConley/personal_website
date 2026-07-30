@@ -32,6 +32,7 @@ const simpleFluidBoundaries = new Set([
   "light-oil",
   "heavy-oil",
   "lubricant",
+  "sulfuric-acid",
 ]);
 
 export function materialType(name: string): MaterialType | undefined {

@@ -1,0 +1,361 @@
+import type { ChainPlan, MaterialType, PlannedRecipe } from "./types";
+
+export type ProductionBlockKind = "solid-panel" | "multi-input-row" | "fluid-row" | "complex-cell";
+
+export interface PhysicalIngredientFlow {
+  materialId: string;
+  name: string;
+  type: MaterialType;
+  perSecond: number;
+}
+
+export interface ProductionBlockContract {
+  id: string;
+  kind: ProductionBlockKind;
+  materialId: string;
+  material: string;
+  recipe: PlannedRecipe["recipe"];
+  outputPerSecond: number;
+  machineCount: number;
+  machineCapacityPerSecond: number;
+  ingredients: PhysicalIngredientFlow[];
+  depth: number;
+  columns: number;
+  machineRows: number;
+  estimatedWidth: number;
+  estimatedHeight: number;
+  local: boolean;
+}
+
+export interface PhysicalMaterialContract {
+  id: string;
+  name: string;
+  type: MaterialType;
+  perSecond: number;
+  boundary: boolean;
+}
+
+export interface ProductionTopology {
+  blocks: ProductionBlockContract[];
+  materials: PhysicalMaterialContract[];
+  depths: number[];
+  score: number;
+  strategy: "hierarchical-blocks-v1";
+}
+
+const MAX_SOLID_FLOW_PER_BELT = 45;
+const MAX_FLUID_FLOW_PER_PIPE = 1_200;
+const MAX_PANEL_COLUMNS = 24;
+const SAFE_BULK_INSERTER_ITEMS_PER_SECOND = 2.31;
+const SAFE_LONG_HANDED_INSERTER_ITEMS_PER_SECOND = 0.5;
+const INSERTER_SLOTS_PER_MACHINE_SIDE = 3;
+
+function transportSizedMachineCount(
+  recipeMinimum: number,
+  outputPerSecond: number,
+  ingredients: PhysicalIngredientFlow[],
+): number {
+  const solids = ingredients.filter((ingredient) => ingredient.type === "item");
+  const outputMinimum = Math.ceil(
+    outputPerSecond /
+      (SAFE_BULK_INSERTER_ITEMS_PER_SECOND * INSERTER_SLOTS_PER_MACHINE_SIDE) -
+      1e-12,
+  );
+  let machineCount = Math.max(recipeMinimum, outputMinimum, 1);
+  while (true) {
+    const slots = solids.map((ingredient, index) => Math.max(
+      1,
+      Math.ceil(
+        ingredient.perSecond /
+          machineCount /
+          (index % 2 === 0
+            ? SAFE_BULK_INSERTER_ITEMS_PER_SECOND
+            : SAFE_LONG_HANDED_INSERTER_ITEMS_PER_SECOND) -
+          1e-12,
+      ),
+    ));
+    const southSlots = slots.slice(0, 2).reduce((sum, count) => sum + count, 0);
+    const northSlots = slots.slice(2).reduce((sum, count) => sum + count, 0);
+    if (southSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE && northSlots <= INSERTER_SLOTS_PER_MACHINE_SIDE) {
+      return machineCount;
+    }
+    machineCount += 1;
+  }
+}
+
+function splitCount(recipe: PlannedRecipe): number {
+  const solidIngredients = recipe.ingredientRates.filter((ingredient) => ingredient.type === "item");
+  const transportSplits = [
+    recipe.materialType === "item"
+      ? Math.ceil(recipe.outputPerSecond / MAX_SOLID_FLOW_PER_BELT - 1e-12)
+      : Math.ceil(recipe.outputPerSecond / MAX_FLUID_FLOW_PER_PIPE - 1e-12),
+    ...recipe.ingredientRates.map((ingredient) => Math.ceil(
+      ingredient.perSecond /
+        (ingredient.type === "item" ? MAX_SOLID_FLOW_PER_BELT : MAX_FLUID_FLOW_PER_PIPE) -
+        1e-12,
+    )),
+  ];
+  if (solidIngredients.length > 4) transportSplits.push(recipe.machineCount);
+  return Math.max(1, ...transportSplits);
+}
+
+function minimumMachineRows(
+  outputPerSecond: number,
+  outputType: MaterialType,
+  ingredients: PhysicalIngredientFlow[],
+): number {
+  const outputRows = outputType === "item"
+    ? outputPerSecond > 22.5 + 1e-12
+      ? 2 * Math.ceil(outputPerSecond / 22.5 - 1e-12)
+      : 1
+    : 1;
+  return Math.max(
+    1,
+    outputRows,
+    ...ingredients.map((ingredient) => ingredient.type === "item"
+      ? Math.ceil(ingredient.perSecond / 22.5 - 1e-12)
+      : 1),
+  );
+}
+
+function chooseGeometry(machineCount: number, kind: ProductionBlockKind, requiredRows = 1): {
+  columns: number;
+  machineRows: number;
+  width: number;
+  height: number;
+} {
+  if (kind === "complex-cell") {
+    return { columns: 1, machineRows: machineCount, width: 34, height: machineCount * 24 };
+  }
+  if (kind === "solid-panel") {
+    const requiredColumns = Math.ceil(machineCount / requiredRows);
+    if (requiredColumns <= MAX_PANEL_COLUMNS) {
+      return {
+        columns: requiredColumns,
+        machineRows: requiredRows,
+        width: requiredColumns * 4 + 20,
+        height: Math.ceil(requiredRows / 2) * 16,
+      };
+    }
+  }
+  if (kind === "multi-input-row") {
+    const requiredColumns = Math.ceil(machineCount / requiredRows);
+    if (requiredColumns <= MAX_PANEL_COLUMNS) {
+      return {
+        columns: requiredColumns,
+        machineRows: requiredRows,
+        width: requiredColumns * 4 + 20,
+        height: requiredRows * 16,
+      };
+    }
+  }
+  let best: { columns: number; machineRows: number; width: number; height: number; score: number } | undefined;
+  for (let columns = 1; columns <= Math.min(MAX_PANEL_COLUMNS, machineCount); columns += 1) {
+    const machineRows = Math.ceil(machineCount / columns);
+    if (machineRows < requiredRows) continue;
+    const panelCount = kind === "solid-panel" ? Math.ceil(machineRows / 2) : machineRows;
+    const width = columns * 4 + 20;
+    const height = panelCount * (kind === "solid-panel" || kind === "multi-input-row" ? 16 : 18);
+    const area = width * height;
+    const score = area + Math.max(width, height) * 12 + panelCount * 40;
+    if (!best || score < best.score) best = { columns, machineRows, width, height, score };
+  }
+  return {
+    columns: best!.columns,
+    machineRows: best!.machineRows,
+    width: best!.width,
+    height: best!.height,
+  };
+}
+
+function blockKind(recipe: PlannedRecipe["recipe"]): ProductionBlockKind {
+  const solids = recipe.ingredients.filter((ingredient) => ingredient.type === "item").length;
+  if (recipe.ingredients.some((ingredient) => ingredient.type === "fluid") || recipe.result.type === "fluid") {
+    return solids <= 4 ? "fluid-row" : "complex-cell";
+  }
+  if (solids === 4) return "fluid-row";
+  if (solids > 3) return "complex-cell";
+  if (solids === 3) return "multi-input-row";
+  return "solid-panel";
+}
+
+/**
+ * Converts the exact recipe plan into physical, independently routable blocks.
+ * Copper cable is localized per consumer so high-yield cable never becomes a
+ * factory-wide transport bottleneck.
+ */
+export function optimizeProductionTopology(plan: ChainPlan): ProductionTopology {
+  const recipeByMaterial = new Map(plan.recipes.map((recipe) => [recipe.material, recipe]));
+  const cableRecipe = recipeByMaterial.get("copper-cable");
+  const localizeCable = Boolean(cableRecipe && plan.target !== "copper-cable");
+
+  const materialDepth = new Map<string, number>(plan.inputs.map((input) => [input.name, 0]));
+  for (const recipe of plan.recipes) {
+    const depth = 1 + Math.max(
+      0,
+      ...recipe.recipe.ingredients.map((ingredient) => materialDepth.get(ingredient.name) ?? 0),
+    );
+    materialDepth.set(recipe.material, depth);
+  }
+
+  const blocks: ProductionBlockContract[] = [];
+  const materialRates = new Map<string, PhysicalMaterialContract>();
+  for (const input of plan.inputs) {
+    materialRates.set(input.name, {
+      id: input.name,
+      name: input.name,
+      type: input.type,
+      perSecond: input.requiredPerSecond,
+      boundary: true,
+    });
+  }
+
+  function addMaterial(material: PhysicalMaterialContract): void {
+    const current = materialRates.get(material.id);
+    if (current) current.perSecond += material.perSecond;
+    else materialRates.set(material.id, material);
+  }
+
+  for (const planned of plan.recipes) {
+    if (localizeCable && planned.material === "copper-cable") continue;
+    const shards = splitCount(planned);
+    for (let shard = 0; shard < shards; shard += 1) {
+      const outputPerSecond = planned.outputPerSecond / shards;
+      const machineCount = Math.max(
+        1,
+        Math.ceil(outputPerSecond / planned.machineCapacityPerSecond - 1e-12),
+      );
+      const ingredients: PhysicalIngredientFlow[] = [];
+      for (const ingredient of planned.ingredientRates) {
+        const perSecond = ingredient.perSecond / shards;
+        if (localizeCable && ingredient.name === "copper-cable") {
+          const streamId = `copper-cable@${planned.material}:${shard + 1}`;
+          const localRecipe = cableRecipe!;
+          const localRecipeMinimum = Math.max(
+            1,
+            Math.ceil(perSecond / localRecipe.machineCapacityPerSecond - 1e-12),
+          );
+          const localIngredients: PhysicalIngredientFlow[] = [{
+            materialId: "copper-plate",
+            name: "copper-plate",
+            type: "item",
+            perSecond: perSecond / 2,
+          }];
+          const kind = blockKind(localRecipe.recipe);
+          const localRows = minimumMachineRows(perSecond, "item", localIngredients);
+          const localMachinesPerRow = transportSizedMachineCount(
+            Math.ceil(localRecipeMinimum / localRows),
+            perSecond / localRows,
+            localIngredients.map((ingredient) => ({
+              ...ingredient,
+              perSecond: ingredient.perSecond / localRows,
+            })),
+          );
+          const localMachineCount = localMachinesPerRow * localRows;
+          const geometry = chooseGeometry(localMachineCount, kind, localRows);
+          blocks.push({
+            id: `block:${streamId}`,
+            kind,
+            materialId: streamId,
+            material: "copper-cable",
+            recipe: localRecipe.recipe,
+            outputPerSecond: perSecond,
+            machineCount: localMachineCount,
+            machineCapacityPerSecond: localRecipe.machineCapacityPerSecond,
+            ingredients: localIngredients,
+            depth: Math.max(1, materialDepth.get("copper-cable") ?? 1),
+            columns: geometry.columns,
+            machineRows: geometry.machineRows,
+            estimatedWidth: geometry.width,
+            estimatedHeight: geometry.height,
+            local: true,
+          });
+          addMaterial({
+            id: streamId,
+            name: "copper-cable",
+            type: "item",
+            perSecond,
+            boundary: false,
+          });
+          ingredients.push({
+            materialId: streamId,
+            name: "copper-cable",
+            type: "item",
+            perSecond,
+          });
+        } else {
+          ingredients.push({
+            materialId: ingredient.name,
+            name: ingredient.name,
+            type: ingredient.type,
+            perSecond,
+          });
+        }
+      }
+
+      const sizedMachineCount = transportSizedMachineCount(
+        machineCount,
+        outputPerSecond,
+        ingredients,
+      );
+      const kind = blockKind(planned.recipe);
+      const requiredRows = minimumMachineRows(
+        outputPerSecond,
+        planned.materialType,
+        ingredients,
+      );
+      const rowSizedMachineCount = transportSizedMachineCount(
+        Math.ceil(machineCount / requiredRows),
+        outputPerSecond / requiredRows,
+        ingredients.map((ingredient) => ({
+          ...ingredient,
+          perSecond: ingredient.perSecond / requiredRows,
+        })),
+      ) * requiredRows;
+      const physicalMachineCount = Math.max(sizedMachineCount, rowSizedMachineCount, requiredRows);
+      const geometry = chooseGeometry(physicalMachineCount, kind, requiredRows);
+      blocks.push({
+        id: `block:${planned.material}:${shard + 1}`,
+        kind,
+        materialId: planned.material,
+        material: planned.material,
+        recipe: planned.recipe,
+        outputPerSecond,
+        machineCount: physicalMachineCount,
+        machineCapacityPerSecond: planned.machineCapacityPerSecond,
+        ingredients,
+        depth: materialDepth.get(planned.material) ?? 1,
+        columns: geometry.columns,
+        machineRows: geometry.machineRows,
+        estimatedWidth: geometry.width,
+        estimatedHeight: geometry.height,
+        local: false,
+      });
+      addMaterial({
+        id: planned.material,
+        name: planned.material,
+        type: planned.materialType,
+        perSecond: outputPerSecond,
+        boundary: false,
+      });
+    }
+  }
+
+  const depths = [...new Set(blocks.map((block) => block.depth))].sort((left, right) => left - right);
+  const depthWidths = depths.map((depth) => Math.max(
+    ...blocks.filter((block) => block.depth === depth).map((block) => block.estimatedWidth),
+  ));
+  const depthHeights = depths.map((depth) => blocks
+    .filter((block) => block.depth === depth)
+    .reduce((sum, block) => sum + block.estimatedHeight + 4, 0));
+  const estimatedWidth = depthWidths.reduce((sum, width) => sum + width + 12, 0);
+  const estimatedHeight = Math.max(...depthHeights, materialRates.size * 4 + 20);
+
+  return {
+    blocks,
+    materials: [...materialRates.values()],
+    depths,
+    score: estimatedWidth * estimatedHeight,
+    strategy: "hierarchical-blocks-v1",
+  };
+}

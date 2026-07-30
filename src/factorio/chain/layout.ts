@@ -172,7 +172,7 @@ function addHorizontalBeltWithCrossings(
   }
 }
 
-function addVerticalPipe(
+export function addVerticalPipe(
   drafts: Draft[],
   material: string,
   x: number,
@@ -203,7 +203,7 @@ function addVerticalPipe(
   }
 }
 
-function addHorizontalPipeBus(
+export function addHorizontalPipeBus(
   drafts: Draft[],
   material: string,
   startX: number,

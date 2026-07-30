@@ -67,6 +67,19 @@ export interface PlannedInput {
   utilization: number;
 }
 
+export type ThroughputConstraintKind = "boundary-input" | "output-transport" | "physical-block";
+
+export interface ThroughputConstraint {
+  id: string;
+  kind: ThroughputConstraintKind;
+  material: string;
+  capacityPerSecond: number;
+  requiredPerOutput: number;
+  maximumOutputPerSecond: number;
+  binding: boolean;
+  explanation: string;
+}
+
 export interface ChainPlan {
   requestedOutputPerSecond: number;
   effectiveOutputPerSecond: number;
@@ -80,6 +93,8 @@ export interface ChainPlan {
   recipes: PlannedRecipe[];
   materialRates: Record<string, number>;
   unitInputRequirements: Record<string, number>;
+  constraints: ThroughputConstraint[];
+  limitingConstraints: ThroughputConstraint[];
 }
 
 export type ChainEntityRole =
