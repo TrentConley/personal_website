@@ -148,7 +148,7 @@ export interface GeneratedChainBlueprint {
   outputPort: ChainPort;
   itemCost: Record<string, number>;
   spatialOptimization?: {
-    strategy: "bounded-candidate-search-v1";
+    strategy: "staged-motif-compiler-v2";
     policy: string;
     candidatesAccepted: number;
     width: number;

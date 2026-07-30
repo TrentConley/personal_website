@@ -10,7 +10,16 @@ import {
   type PhysicalIngredientFlow,
   type ProductionBlockContract,
 } from "./optimizer";
+import { buildCircuitMotifLayout } from "./motif-layout";
 import type { ChainPlan, ChainEntityRole, MaterialType } from "./types";
+
+export type SpatialLayoutPolicyId =
+  | "circuit-motif"
+  | "micro"
+  | "dense"
+  | "compact"
+  | "compact-fluid"
+  | "conservative";
 
 interface InputTap {
   materialId: string;
@@ -40,7 +49,7 @@ interface PlacedBlock {
 }
 
 export interface SpatialLayoutPolicy {
-  id: "micro" | "dense" | "compact" | "compact-fluid" | "conservative";
+  id: Exclude<SpatialLayoutPolicyId, "circuit-motif">;
   busPitch: number;
   busToMachineGap: number;
   trackPitch: number;
@@ -53,7 +62,7 @@ export interface SpatialLayoutPolicy {
 }
 
 export interface SpatialLayoutMetrics {
-  policy: SpatialLayoutPolicy["id"];
+  policy: SpatialLayoutPolicyId;
   width: number;
   height: number;
   area: number;
@@ -1738,7 +1747,7 @@ function assertMaterialIsolation(layout: CanonicalLayout): void {
 
 function measureSpatialLayout(
   layout: CanonicalLayout,
-  policy: SpatialLayoutPolicy,
+  policy: SpatialLayoutPolicyId,
 ): SpatialLayoutMetrics {
   const extents = layout.drafts.map((draft) => {
     const half = collisionHalfSize(draft);
@@ -1762,7 +1771,7 @@ function measureSpatialLayout(
   const undergroundEntities = layout.drafts.filter((draft) => draft.role === "underground-belt" ||
     draft.role === "pipe-to-ground").length;
   return {
-    policy: policy.id,
+    policy,
     width,
     height,
     area,
@@ -1785,13 +1794,24 @@ export function buildSpatialLayoutCandidates(
 ): Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> {
   const candidates: Array<{ layout: CanonicalLayout; metrics: SpatialLayoutMetrics }> = [];
   const errors: string[] = [];
+  const motifLayout = buildCircuitMotifLayout(plan, inputSide, outputSide, beltTier);
+  if (motifLayout) {
+    try {
+      assertCollisionFreeCandidate(motifLayout);
+      assertUndergroundPairing(motifLayout);
+      assertMaterialIsolation(motifLayout);
+      candidates.push({ layout: motifLayout, metrics: measureSpatialLayout(motifLayout, "circuit-motif") });
+    } catch (error) {
+      errors.push(`circuit-motif: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   for (const policy of SPATIAL_LAYOUT_POLICIES) {
     try {
       const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
       assertCollisionFreeCandidate(layout);
       assertUndergroundPairing(layout);
       assertMaterialIsolation(layout);
-      candidates.push({ layout, metrics: measureSpatialLayout(layout, policy) });
+      candidates.push({ layout, metrics: measureSpatialLayout(layout, policy.id) });
     } catch (error) {
       errors.push(`${policy.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1808,18 +1828,31 @@ export function diagnoseSpatialLayoutPolicies(
   inputSide: Side,
   outputSide: Side,
   beltTier: keyof typeof BELTS,
-): Array<{ policy: SpatialLayoutPolicy["id"]; metrics?: SpatialLayoutMetrics; error?: string }> {
-  return SPATIAL_LAYOUT_POLICIES.map((policy) => {
+): Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> {
+  const diagnostics: Array<{ policy: SpatialLayoutPolicyId; metrics?: SpatialLayoutMetrics; error?: string }> = [];
+  const motifLayout = buildCircuitMotifLayout(plan, inputSide, outputSide, beltTier);
+  if (motifLayout) {
+    try {
+      assertCollisionFreeCandidate(motifLayout);
+      assertUndergroundPairing(motifLayout);
+      assertMaterialIsolation(motifLayout);
+      diagnostics.push({ policy: "circuit-motif", metrics: measureSpatialLayout(motifLayout, "circuit-motif") });
+    } catch (error) {
+      diagnostics.push({ policy: "circuit-motif", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  diagnostics.push(...SPATIAL_LAYOUT_POLICIES.map((policy) => {
     try {
       const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
       assertCollisionFreeCandidate(layout);
       assertUndergroundPairing(layout);
       assertMaterialIsolation(layout);
-      return { policy: policy.id, metrics: measureSpatialLayout(layout, policy) };
+      return { policy: policy.id, metrics: measureSpatialLayout(layout, policy.id) };
     } catch (error) {
       return { policy: policy.id, error: error instanceof Error ? error.message : String(error) };
     }
-  });
+  }));
+  return diagnostics;
 }
 
 export function buildOptimizedCanonicalLayout(
