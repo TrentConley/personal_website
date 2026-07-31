@@ -11,12 +11,23 @@ import {
   type ProductionBlockContract,
 } from "./optimizer";
 import { buildAnonymousCellLayout } from "./motif-layout";
-import { buildBoundaryRecipeLayout, buildHierarchicalLayout } from "./hierarchical-layout";
+import {
+  buildBoundaryRecipeLayout,
+  buildCoupledChainLayout,
+  buildCoupledRowLayout,
+  buildForkJoinLayout,
+  buildHierarchicalLayout,
+  buildRecursiveCellLayout,
+} from "./hierarchical-layout";
 import type { ChainPlan, ChainEntityRole, MaterialType } from "./types";
 
 export type SpatialLayoutPolicyId =
   | "anonymous-cell"
   | "boundary-recipe"
+  | "coupled-rows"
+  | "coupled-chain"
+  | "fork-join"
+  | "recursive-cell-cover"
   | "hierarchical-islands"
   | "adaptive-production-graph";
 
@@ -75,6 +86,50 @@ export interface SpatialLayoutMetrics {
 // lowest measured spatial cost wins. A coordinate is accepted only on its own
 // routing and physical-validation result.
 const ADAPTIVE_GEOMETRY_SEARCH: readonly SpatialLayoutPolicy[] = [
+  {
+    busPitch: 3,
+    busToMachineGap: 6,
+    trackPitch: 1,
+    ingressPadding: 6,
+    machineOutputGap: 4,
+    outputPadding: 4,
+    blockGap: 1,
+    depthGap: 4,
+    factoryEndGap: 2,
+  },
+  {
+    busPitch: 3,
+    busToMachineGap: 6,
+    trackPitch: 2,
+    ingressPadding: 6,
+    machineOutputGap: 3,
+    outputPadding: 3,
+    blockGap: 1,
+    depthGap: 2,
+    factoryEndGap: 2,
+  },
+  {
+    busPitch: 3,
+    busToMachineGap: 4,
+    trackPitch: 2,
+    ingressPadding: 4,
+    machineOutputGap: 1,
+    outputPadding: 1,
+    blockGap: 1,
+    depthGap: 2,
+    factoryEndGap: 1,
+  },
+  {
+    busPitch: 3,
+    busToMachineGap: 5,
+    trackPitch: 2,
+    ingressPadding: 5,
+    machineOutputGap: 2,
+    outputPadding: 2,
+    blockGap: 2,
+    depthGap: 3,
+    factoryEndGap: 2,
+  },
   {
     busPitch: 4,
     busToMachineGap: 8,
@@ -1319,8 +1374,11 @@ function buildCanonicalLayoutCandidate(
     const inputTrackTotal = blocks.reduce((sum, block) => sum + block.machineRows * block.ingredients.length, 0);
     const outputTrackTotal = blocks.reduce((sum, block) => sum + outputTrackCount(block), 0);
     const ingressWidth = inputTrackTotal * policy.trackPitch + policy.ingressPadding;
+    // `columns * pitch + 2` covers the last machine, its side inserters, and
+    // the feeder endpoint. The former extra eight tiles were inherited from
+    // an early fixed corridor and multiplied once per graph depth.
     const maximumMachineWidth = Math.max(...blocks.map((block) =>
-      block.kind === "fluid-row" ? block.columns * 6 + 8 : block.columns * 4 + 8));
+      block.kind === "fluid-row" ? block.columns * 6 + 2 : block.columns * 4 + 2));
     const machineStartX = cursorX + ingressWidth;
     const outputStartX = machineStartX + maximumMachineWidth + policy.machineOutputGap;
     const columnEndX = outputStartX + outputTrackTotal * policy.trackPitch + policy.outputPadding;
@@ -1815,6 +1873,66 @@ export function buildSpatialLayoutCandidates(
     errors.push(`boundary-recipe: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
+    const coupledLayout = buildCoupledRowLayout(plan, inputSide, outputSide, beltTier);
+    if (coupledLayout) {
+      assertCollisionFreeCandidate(coupledLayout);
+      assertUndergroundPairing(coupledLayout);
+      assertMaterialIsolation(coupledLayout);
+      candidates.push({ layout: coupledLayout, metrics: measureSpatialLayout(coupledLayout, "coupled-rows") });
+    }
+  } catch (error) {
+    errors.push(`coupled-rows: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const chainLayout = buildCoupledChainLayout(plan, inputSide, outputSide, beltTier);
+    if (chainLayout) {
+      assertCollisionFreeCandidate(chainLayout);
+      assertUndergroundPairing(chainLayout);
+      assertMaterialIsolation(chainLayout);
+      candidates.push({ layout: chainLayout, metrics: measureSpatialLayout(chainLayout, "coupled-chain") });
+    }
+  } catch (error) {
+    errors.push(`coupled-chain: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const forkLayout = buildForkJoinLayout(plan, inputSide, outputSide, beltTier);
+    if (forkLayout) {
+      assertCollisionFreeCandidate(forkLayout);
+      assertUndergroundPairing(forkLayout);
+      assertMaterialIsolation(forkLayout);
+      candidates.push({ layout: forkLayout, metrics: measureSpatialLayout(forkLayout, "fork-join") });
+    }
+  } catch (error) {
+    errors.push(`fork-join: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
+    if (cellLayout) {
+      assertCollisionFreeCandidate(cellLayout);
+      assertUndergroundPairing(cellLayout);
+      assertMaterialIsolation(cellLayout);
+      candidates.push({ layout: cellLayout, metrics: measureSpatialLayout(cellLayout, "anonymous-cell") });
+    }
+  } catch (error) {
+    errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (candidates.length === 0) {
+    try {
+      const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
+      if (recursiveLayout) {
+        assertCollisionFreeCandidate(recursiveLayout);
+        assertUndergroundPairing(recursiveLayout);
+        assertMaterialIsolation(recursiveLayout);
+        candidates.push({
+          layout: recursiveLayout,
+          metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
+        });
+      }
+    } catch (error) {
+      errors.push(`recursive-cell-cover: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  try {
     const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);
     if (hierarchicalLayout) {
       assertCollisionFreeCandidate(hierarchicalLayout);
@@ -1827,17 +1945,6 @@ export function buildSpatialLayoutCandidates(
     }
   } catch (error) {
     errors.push(`hierarchical-islands: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  try {
-    const cellLayout = buildAnonymousCellLayout(plan, inputSide, outputSide, beltTier);
-    if (cellLayout) {
-      assertCollisionFreeCandidate(cellLayout);
-      assertUndergroundPairing(cellLayout);
-      assertMaterialIsolation(cellLayout);
-      candidates.push({ layout: cellLayout, metrics: measureSpatialLayout(cellLayout, "anonymous-cell") });
-    }
-  } catch (error) {
-    errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
   }
   for (const [variantIndex, policy] of ADAPTIVE_GEOMETRY_SEARCH.entries()) {
     try {
@@ -1885,6 +1992,57 @@ export function diagnoseSpatialLayoutPolicies(
     });
   }
   try {
+    const coupledLayout = buildCoupledRowLayout(plan, inputSide, outputSide, beltTier);
+    if (coupledLayout) {
+      assertCollisionFreeCandidate(coupledLayout);
+      assertUndergroundPairing(coupledLayout);
+      assertMaterialIsolation(coupledLayout);
+      diagnostics.push({
+        policy: "coupled-rows",
+        metrics: measureSpatialLayout(coupledLayout, "coupled-rows"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "coupled-rows",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    const chainLayout = buildCoupledChainLayout(plan, inputSide, outputSide, beltTier);
+    if (chainLayout) {
+      assertCollisionFreeCandidate(chainLayout);
+      assertUndergroundPairing(chainLayout);
+      assertMaterialIsolation(chainLayout);
+      diagnostics.push({
+        policy: "coupled-chain",
+        metrics: measureSpatialLayout(chainLayout, "coupled-chain"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "coupled-chain",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    const forkLayout = buildForkJoinLayout(plan, inputSide, outputSide, beltTier);
+    if (forkLayout) {
+      assertCollisionFreeCandidate(forkLayout);
+      assertUndergroundPairing(forkLayout);
+      assertMaterialIsolation(forkLayout);
+      diagnostics.push({
+        policy: "fork-join",
+        metrics: measureSpatialLayout(forkLayout, "fork-join"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "fork-join",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
     const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);
     if (hierarchicalLayout) {
       assertCollisionFreeCandidate(hierarchicalLayout);
@@ -1898,6 +2056,23 @@ export function diagnoseSpatialLayoutPolicies(
   } catch (error) {
     diagnostics.push({
       policy: "hierarchical-islands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
+    if (recursiveLayout) {
+      assertCollisionFreeCandidate(recursiveLayout);
+      assertUndergroundPairing(recursiveLayout);
+      assertMaterialIsolation(recursiveLayout);
+      diagnostics.push({
+        policy: "recursive-cell-cover",
+        metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      policy: "recursive-cell-cover",
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -1937,6 +2112,33 @@ export function diagnoseSpatialLayoutPolicies(
     error: adaptiveDiagnostics.map((diagnostic) => diagnostic.error).filter(Boolean).join(" "),
   });
   return diagnostics;
+}
+
+export function diagnoseAdaptiveGeometrySearch(
+  plan: ChainPlan,
+  inputSide: Side,
+  outputSide: Side,
+  beltTier: keyof typeof BELTS,
+): Array<{ variant: number; policy: SpatialLayoutPolicy; metrics?: SpatialLayoutMetrics; error?: string }> {
+  return ADAPTIVE_GEOMETRY_SEARCH.map((policy, index) => {
+    try {
+      const layout = buildCanonicalLayoutCandidate(plan, inputSide, outputSide, beltTier, policy);
+      assertCollisionFreeCandidate(layout);
+      assertUndergroundPairing(layout);
+      assertMaterialIsolation(layout);
+      return {
+        variant: index + 1,
+        policy,
+        metrics: measureSpatialLayout(layout, "adaptive-production-graph"),
+      };
+    } catch (error) {
+      return {
+        variant: index + 1,
+        policy,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
 }
 
 export function buildOptimizedCanonicalLayout(
