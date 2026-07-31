@@ -1916,21 +1916,19 @@ export function buildSpatialLayoutCandidates(
   } catch (error) {
     errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (candidates.length === 0) {
-    try {
-      const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
-      if (recursiveLayout) {
-        assertCollisionFreeCandidate(recursiveLayout);
-        assertUndergroundPairing(recursiveLayout);
-        assertMaterialIsolation(recursiveLayout);
-        candidates.push({
-          layout: recursiveLayout,
-          metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
-        });
-      }
-    } catch (error) {
-      errors.push(`recursive-cell-cover: ${error instanceof Error ? error.message : String(error)}`);
+  try {
+    const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
+    if (recursiveLayout) {
+      assertCollisionFreeCandidate(recursiveLayout);
+      assertUndergroundPairing(recursiveLayout);
+      assertMaterialIsolation(recursiveLayout);
+      candidates.push({
+        layout: recursiveLayout,
+        metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
+      });
     }
+  } catch (error) {
+    errors.push(`recursive-cell-cover: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
     const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);

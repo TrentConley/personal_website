@@ -723,6 +723,9 @@ function panelPlacementCandidates(
   limit: number,
   preferWestOfPort = false,
   searchPadding = 2,
+  diversifyAroundPort = false,
+  clearanceTiles = 1,
+  distanceWeight = 7,
 ): PanelPackingState[] {
   const candidates: Array<{ translateX: number; translateY: number; score: number;
     minimumX: number; maximumX: number; minimumY: number; maximumY: number }> = [];
@@ -731,7 +734,7 @@ function panelPlacementCandidates(
   const minimumTranslateY = state.minimumY - geometry.maximumY - searchPadding;
   const maximumTranslateY = state.maximumY - geometry.minimumY + searchPadding;
   const localOutput = floorPosition(geometry.panel.outputPosition);
-  const outputStep = geometry.panel.outputDirection === 12 ? -1 : 1;
+  const outputVector = directionVector(geometry.panel.outputDirection);
   for (let translateX = minimumTranslateX; translateX <= maximumTranslateX; translateX += 1) {
     for (let translateY = minimumTranslateY; translateY <= maximumTranslateY; translateY += 1) {
       const panelMinimumX = geometry.minimumX + translateX;
@@ -760,18 +763,17 @@ function panelPlacementCandidates(
         maximumX,
         minimumY,
         maximumY,
-        score: width * height * 100 + Math.max(width, height) * 18 + distance * 7 + edgeDistance * 2 +
+        score: width * height * 100 + Math.max(width, height) * 18 + distance * distanceWeight + edgeDistance * 2 +
           eastOverflow * 10_000,
       });
     }
   }
   candidates.sort((left, right) => left.score - right.score ||
     left.translateY - right.translateY || left.translateX - right.translateX);
-  const accepted: PanelPackingState[] = [];
+  const validCandidates: typeof candidates = [];
   for (const candidate of candidates) {
-    if (accepted.length >= limit) break;
-    const outputX = localOutput.x + candidate.translateX + outputStep;
-    const outputY = localOutput.y + candidate.translateY;
+    const outputX = localOutput.x + candidate.translateX + outputVector.x;
+    const outputY = localOutput.y + candidate.translateY + outputVector.y;
     if (state.occupancy.has(`${outputX},${outputY}`)) continue;
     let collision = false;
     const outsideExistingBounds =
@@ -781,16 +783,47 @@ function panelPlacementCandidates(
       collision = geometry.occupiedTiles.some((tile) => {
         const x = tile.x + candidate.translateX;
         const y = tile.y + candidate.translateY;
-        return state.occupancy.has(`${x},${y}`) || state.occupancy.has(`${x - 1},${y}`) ||
-          state.occupancy.has(`${x + 1},${y}`) || state.occupancy.has(`${x},${y - 1}`) ||
-          state.occupancy.has(`${x},${y + 1}`);
+        if (state.occupancy.has(`${x},${y}`)) return true;
+        if (clearanceTiles === 0) return false;
+        return state.occupancy.has(`${x - 1},${y}`) || state.occupancy.has(`${x + 1},${y}`) ||
+          state.occupancy.has(`${x},${y - 1}`) || state.occupancy.has(`${x},${y + 1}`);
       });
     }
     if (collision) continue;
+    validCandidates.push(candidate);
+    if (!diversifyAroundPort && validCandidates.length >= limit) break;
+  }
+  let selectedCandidates = validCandidates;
+  if (diversifyAroundPort) {
+    const perDirection = Math.max(1, Math.floor(limit / 4));
+    const counts = new Map<string, number>();
+    const selected = new Set<(typeof candidates)[number]>();
+    for (const candidate of validCandidates) {
+      const outputX = localOutput.x + candidate.translateX;
+      const outputY = localOutput.y + candidate.translateY;
+      const deltaX = outputX - virtualPort.x;
+      const deltaY = outputY - virtualPort.y;
+      const direction = Math.abs(deltaX) >= Math.abs(deltaY)
+        ? deltaX < 0 ? "west" : "east"
+        : deltaY < 0 ? "north" : "south";
+      if ((counts.get(direction) ?? 0) >= perDirection) continue;
+      counts.set(direction, (counts.get(direction) ?? 0) + 1);
+      selected.add(candidate);
+      if (selected.size >= limit) break;
+    }
+    if (selected.size < limit) {
+      for (const candidate of validCandidates) {
+        selected.add(candidate);
+        if (selected.size >= limit) break;
+      }
+    }
+    selectedCandidates = [...selected];
+  }
+  return selectedCandidates.map((candidate) => {
     const occupancy = new Set(state.occupancy);
     geometry.occupiedTiles.forEach((tile) =>
       occupancy.add(`${tile.x + candidate.translateX},${tile.y + candidate.translateY}`));
-    accepted.push({
+    return {
       occupancy,
       placements: [...state.placements, {
         geometry,
@@ -802,9 +835,8 @@ function panelPlacementCandidates(
       minimumY: candidate.minimumY,
       maximumY: candidate.maximumY,
       score: candidate.score,
-    });
-  }
-  return accepted;
+    };
+  });
 }
 
 function searchPanelPackings(
@@ -1629,6 +1661,9 @@ function addRoutedBoundaryFanout(
   undergroundName: string,
   requestedMaterialOrder: string[],
   trunkClearance = 8,
+  verticalClearance = 8,
+  portPitch = 4,
+  portLead = 6,
 ): Map<string, { x: number; y: number }> | undefined {
   const inputPositions = new Map<string, { x: number; y: number }>();
   const materialOrder = requestedMaterialOrder.filter((material, index, all) =>
@@ -1636,7 +1671,7 @@ function addRoutedBoundaryFanout(
   if (materialOrder.length === 0) return inputPositions;
   const minimumTapX = Math.min(...taps.map((tap) => tap.x));
   const minimumTapY = Math.min(...taps.map((tap) => tap.y));
-  const portRows = materialOrder.map((_, index) => minimumTapY - 8 - index * 4);
+  const portRows = materialOrder.map((_, index) => minimumTapY - verticalClearance - index * portPitch);
   // Anchor the western distribution channel to the ports it actually serves.
   // The cell cover used to normalize every graph to x=18 and then place the
   // trunks at an unrelated global x=-10, paying a 28-tile empty corridor even
@@ -1645,7 +1680,7 @@ function addRoutedBoundaryFanout(
   // scale with each anonymous graph while leaving enough room for A* to braid
   // and turn competing branches.
   const trunkXs = materialOrder.map((_, index) => minimumTapX - trunkClearance - index * 3);
-  const startX = Math.min(...trunkXs) - 6;
+  const startX = Math.min(...trunkXs) - portLead;
   const branches: Array<{ material: string; output: { x: number; y: number }; input: { x: number; y: number } }> = [];
 
   materialOrder.forEach((material, materialIndex) => {
@@ -3273,7 +3308,11 @@ export function buildBoundaryRecipeLayout(
   const rowYs = rowMachines.map((_, row) => row * rowPitch);
   const maximumColumns = Math.max(...rowMachines);
   const lastMachineX = (maximumColumns - 1) * machinePitch;
-  const collectorX = lastMachineX + 7;
+  // One/two-input rows discharge directly onto the north output belt, so the
+  // collector only needs one turning tile beyond the final pickup.  The old
+  // seven-tile tail was inherited from the four-input side-discharge cell and
+  // multiplied into a large empty corridor at every recursive DAG depth.
+  const collectorX = lastMachineX + (usesTwoFaces || fluidIngredients.length > 0 ? 7 : 2);
   const drafts: Draft[] = [];
   const taps: PortTap[] = [];
   const outputRows: number[] = [];
@@ -3972,6 +4011,10 @@ function materializeTreePlacement(
   beltTier: keyof typeof BELTS,
   preRoutedDrafts?: Draft[],
   boundaryClearance = 8,
+  routeInternalFirst = false,
+  boundaryVerticalClearance = 8,
+  boundaryPortPitch = 4,
+  boundaryPortLead = 6,
 ): CanonicalLayout | undefined {
   const belt = BELTS[beltTier];
   const undergroundName = beltTier === "yellow"
@@ -4028,21 +4071,6 @@ function materializeTreePlacement(
     y: position.y,
   })));
   outputs.forEach((position, node) => outputs.set(node, { x: position.x + translateX, y: position.y }));
-  const inputPositions = addRoutedBoundaryFanout(
-    drafts,
-    externalTaps,
-    plan,
-    belt.entityName,
-    belt.splitterEntityName,
-    undergroundName,
-    plan.inputs.map((input) => input.name),
-    boundaryClearance,
-  );
-  if (!inputPositions) return rejectTreePlacement("boundary-routing");
-  if (inputPositions.size !== plan.inputs.length || !collisionFreeDrafts(drafts) ||
-    !undergroundPairingValid(drafts) || crossMaterialTransportFeed(drafts)) {
-    return rejectTreePlacement("boundary-validation");
-  }
   const rootOutput = outputs.get(root)!;
   const shiftedRootOutput = { x: Math.floor(rootOutput.x), y: Math.floor(rootOutput.y) };
   const reservedIngressTiles = new Set<string>();
@@ -4054,9 +4082,11 @@ function materializeTreePlacement(
     input: inputs.get(parent)!.get(material)!,
     output: outputs.get(child)!,
     outputDirection: outputDirections.get(child)!,
-  }))).sort((left, right) =>
-    Math.abs(left.output.x - left.input.x) + Math.abs(left.output.y - left.input.y) -
-    Math.abs(right.output.x - right.input.x) - Math.abs(right.output.y - right.input.y));
+  }))).sort((left, right) => {
+    const leftDistance = Math.abs(left.output.x - left.input.x) + Math.abs(left.output.y - left.input.y);
+    const rightDistance = Math.abs(right.output.x - right.input.x) + Math.abs(right.output.y - right.input.y);
+    return routeInternalFirst ? rightDistance - leftDistance : leftDistance - rightDistance;
+  });
   edges.forEach(({ input }) => {
     const inputTile = floorPosition(input);
     const inputDraft = drafts.find((draft) =>
@@ -4066,17 +4096,39 @@ function materializeTreePlacement(
     const vector = directionVector(inputDraft.direction);
     reservedIngressTiles.add(`${inputTile.x - vector.x},${inputTile.y - vector.y}`);
   });
-  if (!preRoutedDrafts && !edges.every((edge) => routePanelOutput(
-      drafts,
-      edge.material,
-      edge.output,
-      edge.outputDirection,
-      edge.input,
-      belt.entityName,
-      reservedIngressTiles,
-    ))) return rejectTreePlacement("internal-routing");
-  if (!collisionFreeDrafts(drafts) || !undergroundPairingValid(drafts) || crossMaterialTransportFeed(drafts)) {
-    return rejectTreePlacement("internal-validation");
+  const routeInternalEdges = (): boolean => preRoutedDrafts !== undefined || edges.every((edge) => routePanelOutput(
+    drafts,
+    edge.material,
+    edge.output,
+    edge.outputDirection,
+    edge.input,
+    belt.entityName,
+    reservedIngressTiles,
+  ));
+  const internalValid = (): boolean => collisionFreeDrafts(drafts) && undergroundPairingValid(drafts) &&
+    !crossMaterialTransportFeed(drafts);
+  if (routeInternalFirst && (!routeInternalEdges() || !internalValid())) {
+    return rejectTreePlacement("internal-routing");
+  }
+  const inputPositions = addRoutedBoundaryFanout(
+    drafts,
+    externalTaps,
+    plan,
+    belt.entityName,
+    belt.splitterEntityName,
+    undergroundName,
+    plan.inputs.map((input) => input.name),
+    boundaryClearance,
+    boundaryVerticalClearance,
+    boundaryPortPitch,
+    boundaryPortLead,
+  );
+  if (!inputPositions) return rejectTreePlacement("boundary-routing");
+  if (inputPositions.size !== plan.inputs.length || !internalValid()) {
+    return rejectTreePlacement("boundary-validation");
+  }
+  if (!routeInternalFirst && (!routeInternalEdges() || !internalValid())) {
+    return rejectTreePlacement("internal-routing");
   }
   try {
     connectPowerComponents(drafts);
@@ -4088,30 +4140,41 @@ function materializeTreePlacement(
   }
   const rotationQuarterTurns = (SIDE_INDEX[inputSide] - SIDE_INDEX.west + 4) % 4;
   const canonicalOutputSide = INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];
-  let finalOutput = shiftedRootOutput;
-  if (canonicalOutputSide === "east") {
-    const easternEdge = Math.ceil(Math.max(...drafts.map((draft) =>
-      draft.position.x + draftHalfSize(draft).x))) + 3;
-    if (easternEdge > finalOutput.x) {
-      addBeltPath(
-        drafts,
-        "output-belt",
-        root.planned.material,
-        belt.entityName,
-        horizontalPoints(finalOutput.x + 1, easternEdge, finalOutput.y),
-        4,
-      );
-      finalOutput = { x: easternEdge, y: finalOutput.y };
-    }
-  } else {
-    finalOutput = routeCanonicalOutput(
-      drafts,
-      finalOutput,
-      canonicalOutputSide,
-      root.planned.material,
-      belt.entityName,
-    );
-  }
+  const occupiedMinimumX = Math.floor(Math.min(...drafts.map((draft) =>
+    draft.position.x - draftHalfSize(draft).x)));
+  const occupiedMaximumX = Math.ceil(Math.max(...drafts.map((draft) =>
+    draft.position.x + draftHalfSize(draft).x)));
+  const occupiedMinimumY = Math.floor(Math.min(...drafts.map((draft) =>
+    draft.position.y - draftHalfSize(draft).y)));
+  const occupiedMaximumY = Math.ceil(Math.max(...drafts.map((draft) =>
+    draft.position.y + draftHalfSize(draft).y)));
+  const outputDirection = canonicalOutputSide === "north" ? 0
+    : canonicalOutputSide === "east" ? 4
+      : canonicalOutputSide === "south" ? 8
+        : 12;
+  const finalOutput = canonicalOutputSide === "north"
+    ? { x: shiftedRootOutput.x, y: occupiedMinimumY - 1 }
+    : canonicalOutputSide === "east"
+      ? { x: occupiedMaximumX + 1, y: shiftedRootOutput.y }
+      : canonicalOutputSide === "south"
+        ? { x: shiftedRootOutput.x, y: occupiedMaximumY + 1 }
+        : { x: occupiedMinimumX - 1, y: shiftedRootOutput.y };
+  drafts.push({
+    role: "output-belt",
+    material: root.planned.material,
+    name: belt.entityName,
+    position: tilePosition(finalOutput.x, finalOutput.y),
+    direction: outputDirection,
+  });
+  if (!routePanelOutput(
+    drafts,
+    root.planned.material,
+    shiftedRootOutput,
+    outputDirections.get(root)!,
+    tilePosition(finalOutput.x, finalOutput.y),
+    belt.entityName,
+    new Set(),
+  )) return rejectTreePlacement("output-routing");
   const candidate: CanonicalLayout = {
     drafts,
     inputPositions,
@@ -4146,7 +4209,14 @@ export function buildBeamPackedTreeCellLayout(
     const [x, y] = key.split(",").map(Number);
     return { x, y };
   });
-  type RoutedTreePackingState = PanelPackingState & { routedDrafts: Draft[] };
+  type RoutedTreePackingState = PanelPackingState & {
+    routedDrafts: Draft[];
+    boundaryTapXs: number[];
+  };
+  const rootChildMaterials = new Set(root.children.map(({ material }) => material));
+  const rootBoundaryTapXs = [...root.layout.inputPositions]
+    .filter(([material]) => !rootChildMaterials.has(material))
+    .map(([, position]) => Math.floor(position.x));
   let states: RoutedTreePackingState[] = [{
     occupancy: rootOccupancy,
     placements: [],
@@ -4156,6 +4226,7 @@ export function buildBeamPackedTreeCellLayout(
     maximumY: Math.max(...occupied.map((tile) => tile.y)),
     score: 0,
     routedDrafts: root.layout.drafts.map((draft) => ({ ...draft, position: { ...draft.position } })),
+    boundaryTapXs: rootBoundaryTapXs,
   }];
   const panelByNode = new Map(order.map((node) => [node, {
     drafts: node.layout.drafts,
@@ -4167,10 +4238,32 @@ export function buildBeamPackedTreeCellLayout(
     [0, 1, 2, 3].map((quarterTurns) =>
       geometryForPanel(node.planned, rotateSourcePanel(panelByNode.get(node)!, quarterTurns))),
   ]));
+  const selectDiverseBeam = (expanded: RoutedTreePackingState[], limit: number): RoutedTreePackingState[] => {
+    const width = (state: RoutedTreePackingState): number => state.maximumX - state.minimumX + 1;
+    const height = (state: RoutedTreePackingState): number => state.maximumY - state.minimumY + 1;
+    const objectives: Array<(state: RoutedTreePackingState) => number> = [
+      (state) => state.score,
+      (state) => width(state) * height(state),
+      (state) => Math.max(width(state), height(state)) * 2_000 + width(state) * height(state),
+      (state) => width(state) * 4_000 + width(state) * height(state),
+      (state) => Math.abs(width(state) - height(state)) * 1_000 + width(state) * height(state),
+    ];
+    const ranked = objectives.map((objective) => [...expanded].sort((left, right) =>
+      objective(left) - objective(right) || left.score - right.score));
+    const selected = new Set<RoutedTreePackingState>();
+    for (let rank = 0; selected.size < limit && rank < expanded.length; rank += 1) {
+      for (const candidates of ranked) {
+        const candidate = candidates[rank];
+        if (candidate) selected.add(candidate);
+        if (selected.size >= limit) break;
+      }
+    }
+    return [...selected];
+  };
   for (let orderIndex = 0; orderIndex < order.length; orderIndex += 1) {
     const node = order[orderIndex];
     const parentIndex = order.indexOf(node.parent!);
-    states = states.flatMap((state) => {
+    const expandedStates = states.flatMap((state) => {
       const parentTranslation = node.parent === root
         ? { x: 0, y: 0 }
         : {
@@ -4185,9 +4278,38 @@ export function buildBeamPackedTreeCellLayout(
         x: Math.floor(localPort.x) + parentTranslation.x,
         y: Math.floor(localPort.y) + parentTranslation.y,
       };
-      return geometriesByNode.get(node)!.flatMap((geometry) =>
-        panelPlacementCandidates(state, geometry, virtualPort, 2, true, 5).flatMap((nextState) => {
+      const childMaterials = new Set(node.children.map(({ material }) => material));
+      const hasBoundaryInputs = [...node.layout.inputPositions.keys()]
+        .some((material) => !childMaterials.has(material));
+      const geometries = hasBoundaryInputs
+        ? geometriesByNode.get(node)!.filter((geometry) => geometry.panel.outputDirection === 4)
+        : geometriesByNode.get(node)!;
+      return geometries.flatMap((geometry) =>
+        panelPlacementCandidates(
+          state,
+          geometry,
+          virtualPort,
+          hasBoundaryInputs ? 8 : 4,
+          hasBoundaryInputs,
+          5,
+          !hasBoundaryInputs,
+          1,
+          1_000,
+        ).flatMap((nextState) => {
           const placement = nextState.placements.at(-1)!;
+          const newBoundaryTapXs = [...geometry.panel.inputPositions]
+            .filter(([material]) => !childMaterials.has(material))
+            .map(([, position]) => Math.floor(position.x) + placement.translateX);
+          const boundaryTapXs = [...state.boundaryTapXs, ...newBoundaryTapXs];
+          const boundarySpan = boundaryTapXs.length > 1
+            ? Math.max(...boundaryTapXs) - Math.min(...boundaryTapXs)
+            : 0;
+          // Every raw-input tap must remain on one narrow western frontier.
+          // Intermediate cells are deliberately unconstrained: the beam may
+          // fold them above/below their parent instead of stretching the DAG
+          // into a depth-wide ribbon.  This is purely topological and remains
+          // invariant when every material and recipe is renamed.
+          if (newBoundaryTapXs.length > 0 && boundarySpan > 30) return [];
           const trialDrafts = state.routedDrafts.map((draft) => ({
             ...draft,
             position: { ...draft.position },
@@ -4260,11 +4382,13 @@ export function buildBeamPackedTreeCellLayout(
               Math.max(
                 Math.max(...routedTiles.map((tile) => tile.x)) - Math.min(...routedTiles.map((tile) => tile.x)) + 1,
                 Math.max(...routedTiles.map((tile) => tile.y)) - Math.min(...routedTiles.map((tile) => tile.y)) + 1,
-              ) * 300,
+              ) * 300 + boundarySpan * 900,
             routedDrafts: trialDrafts,
+            boundaryTapXs,
           } satisfies RoutedTreePackingState];
         }));
-    }).sort((left, right) => left.score - right.score).slice(0, 12);
+    });
+    states = selectDiverseBeam(expandedStates, 20);
     if (states.length === 0) return undefined;
   }
   const candidates: CanonicalLayout[] = [];
@@ -4294,7 +4418,11 @@ export function buildBeamPackedTreeCellLayout(
       outputSide,
       beltTier,
       state.routedDrafts,
-      16,
+      3,
+      false,
+      4,
+      2,
+      0,
     );
     if (candidate) candidates.push(candidate);
   }
@@ -4304,6 +4432,7 @@ export function buildBeamPackedTreeCellLayout(
     return leftEnvelope.area - rightEnvelope.area || left.drafts.length - right.drafts.length;
   })[0];
 }
+
 
 export function buildFlattenedTreeCellLayout(
   plan: ChainPlan,
@@ -4404,7 +4533,7 @@ export function buildRecursiveCellLayout(
   outputSide: Side,
   beltTier: keyof typeof BELTS,
 ): CanonicalLayout | undefined {
-  if (plan.recipes.length < 5) return undefined;
+  if (plan.recipes.length < 4) return undefined;
   const terminal = plan.recipes.find((planned) => planned.material === plan.target);
   if (!terminal || terminal.recipe.ingredients.length > 4) return undefined;
   if (terminal.recipe.ingredients.length > 2) {
