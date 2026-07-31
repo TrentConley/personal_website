@@ -289,11 +289,11 @@ export function FactorioBlueprintPage() {
           <h1>Describe the boundary.<br />Get the whole factory.</h1>
           <div className="factorio-hero__copy">
             <p>
-              Select one of 111 circuit, science, logistics, military, rail, robot, module,
-              armor, or equipment outputs. List what you will supply on belts and pipes; the
+              Select one of 181 circuit, science, logistics, infrastructure, intermediate,
+              equipment, or fluid outputs. List what you will supply on belts and pipes; the
               planner builds every missing intermediate and returns one Factorio-ready string.
             </p>
-            <span>Vanilla 2.0 · no refinery processing · no rocket · no modules in machines · no beacons</span>
+            <span>Vanilla 2.0 · no oil-refinery recipes · no rocket · no modules in machines · no beacons</span>
           </div>
         </header>
 
@@ -520,7 +520,7 @@ export function FactorioBlueprintPage() {
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <p className="factorio-proof">
-                  Verified headlessly in Factorio 2.0.77: all 102 manufactured-product cases plus
+                  Verified headlessly in Factorio 2.0.77: all 172 manufactured-product cases plus
                   the recursive circuit/science suite imported, placed, powered, and produced.
                 </p>
                 <p className="factorio-icon-credit">Factorio item artwork © Wube Software.</p>

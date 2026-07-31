@@ -1916,19 +1916,25 @@ export function buildSpatialLayoutCandidates(
   } catch (error) {
     errors.push(`anonymous-cell: ${error instanceof Error ? error.message : String(error)}`);
   }
-  try {
-    const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
-    if (recursiveLayout) {
-      assertCollisionFreeCandidate(recursiveLayout);
-      assertUndergroundPairing(recursiveLayout);
-      assertMaterialIsolation(recursiveLayout);
-      candidates.push({
-        layout: recursiveLayout,
-        metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
-      });
+  // Small graphs already handled by a specialized topology do not benefit from
+  // paying for the recursive search.  Still run it when no compact candidate
+  // exists (notably wider boundary recipes), and for every genuinely recursive
+  // graph where placement order matters.
+  if (plan.recipes.length >= 4 || candidates.length === 0) {
+    try {
+      const recursiveLayout = buildRecursiveCellLayout(plan, inputSide, outputSide, beltTier);
+      if (recursiveLayout) {
+        assertCollisionFreeCandidate(recursiveLayout);
+        assertUndergroundPairing(recursiveLayout);
+        assertMaterialIsolation(recursiveLayout);
+        candidates.push({
+          layout: recursiveLayout,
+          metrics: measureSpatialLayout(recursiveLayout, "recursive-cell-cover"),
+        });
+      }
+    } catch (error) {
+      errors.push(`recursive-cell-cover: ${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    errors.push(`recursive-cell-cover: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
     const hierarchicalLayout = buildHierarchicalLayout(plan, inputSide, outputSide, beltTier);

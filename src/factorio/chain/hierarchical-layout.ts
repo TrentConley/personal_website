@@ -1763,6 +1763,56 @@ function addRoutedBoundaryFanout(
   return routed ? inputPositions : undefined;
 }
 
+function addFluidBoundaryFanout(
+  drafts: Draft[],
+  taps: PortTap[],
+  requestedMaterialOrder: string[],
+  itemBoundaryCount: number,
+  trunkClearance = 8,
+  verticalClearance = 8,
+  portPitch = 4,
+  portLead = 6,
+): Map<string, { x: number; y: number }> {
+  const inputPositions = new Map<string, { x: number; y: number }>();
+  const materialOrder = requestedMaterialOrder.filter((material, index, all) =>
+    all.indexOf(material) === index && taps.some((tap) => tap.material === material));
+  if (materialOrder.length === 0) return inputPositions;
+  const minimumTapX = Math.min(...taps.map((tap) => tap.x));
+  const minimumTapY = Math.min(...taps.map((tap) => tap.y));
+  const trunkXs = materialOrder.map((_, index) =>
+    minimumTapX - trunkClearance - (itemBoundaryCount + index) * 3);
+  const portRows = materialOrder.map((_, index) =>
+    minimumTapY - verticalClearance - (itemBoundaryCount + index) * portPitch);
+  const startX = Math.min(...trunkXs) - portLead;
+  const allTapRows = [...new Set(taps.map((tap) => tap.y))];
+
+  materialOrder.forEach((material, materialIndex) => {
+    const trunkX = trunkXs[materialIndex];
+    const portY = portRows[materialIndex];
+    addPumpFreeHorizontalPipe(drafts, material, startX, trunkX, portY);
+    inputPositions.set(material, tilePosition(startX, portY));
+    const materialTaps = taps.filter((tap) => tap.material === material)
+      .sort((left, right) => left.y - right.y || left.x - right.x);
+    const maximumY = Math.max(...materialTaps.map((tap) => tap.y));
+    if (portY + 1 <= maximumY) {
+      addVerticalPipe(
+        drafts,
+        material,
+        trunkX,
+        portY + 1,
+        maximumY,
+        allTapRows.filter((row) => !materialTaps.some((tap) => tap.y === row)),
+      );
+    }
+    materialTaps.forEach((tap) => {
+      if (trunkX + 1 <= tap.x - 1) {
+        addPumpFreeHorizontalPipe(drafts, material, trunkX + 1, tap.x - 1, tap.y);
+      }
+    });
+  });
+  return inputPositions;
+}
+
 const SAFE_COUPLED_BULK_ITEMS_PER_SECOND = 2.31;
 const SAFE_COUPLED_LONG_ITEMS_PER_SECOND = 0.5;
 
@@ -3250,8 +3300,9 @@ function buildRadialBoundaryRecipeLayout(
  * Compiles a single boundary-fed recipe as a set of short, parallel machine
  * rows.  The row count is chosen from entity geometry, while the existing
  * planner remains responsible for exact rate and inserter-capacity sizing.
- * This is deliberately recipe-name agnostic: it applies to any item recipe
- * with up to four solid contracts and one assembling-machine fluid contract.
+ * This is deliberately recipe-name agnostic: it applies to any recipe with
+ * up to four solid contracts and two chemical-plant fluid contracts, including
+ * a fluid result collected on a pipe header.
  * Three- and four-input recipes use both machine faces and discharge through
  * short side branches, avoiding the full-factory bus that these recipes used
  * to fall back to.
@@ -3262,9 +3313,9 @@ export function buildBoundaryRecipeLayout(
   outputSide: Side,
   beltTier: keyof typeof BELTS,
 ): CanonicalLayout | undefined {
-  if (plan.targetType !== "item" || plan.recipes.length !== 1) return undefined;
+  if (plan.recipes.length !== 1) return undefined;
   const planned = plan.recipes[0];
-  if (planned.material !== plan.target || planned.materialType !== "item") return undefined;
+  if (planned.material !== plan.target || planned.materialType !== plan.targetType) return undefined;
   const boundaries = new Set(plan.inputs.map((input) => input.name));
   if (planned.recipe.ingredients.some((ingredient) => !boundaries.has(ingredient.name))) return undefined;
   const itemIngredients = [...planned.ingredientRates]
@@ -3273,7 +3324,7 @@ export function buildBoundaryRecipeLayout(
       planned.recipe.ingredients.findIndex((ingredient) => ingredient.name === left.name) -
         planned.recipe.ingredients.findIndex((ingredient) => ingredient.name === right.name));
   const fluidIngredients = planned.ingredientRates.filter((ingredient) => ingredient.type === "fluid");
-  if (itemIngredients.length > 4 && fluidIngredients.length === 0) {
+  if (plan.targetType === "item" && itemIngredients.length > 4 && fluidIngredients.length === 0) {
     return buildRadialBoundaryRecipeLayout(
       plan,
       planned,
@@ -3283,15 +3334,18 @@ export function buildBoundaryRecipeLayout(
       beltTier,
     );
   }
-  if (itemIngredients.length > 4 || fluidIngredients.length > 1) return undefined;
+  if (itemIngredients.length > 4 || fluidIngredients.length > 2) return undefined;
   if (fluidIngredients.length > 0 && itemIngredients.length > 3) return undefined;
+  if (fluidIngredients.length > 1 && planned.recipe.machine.name !== "chemical-plant") return undefined;
   if (fluidIngredients.length > 0 &&
     planned.recipe.machine.name !== "assembling-machine-3" &&
     planned.recipe.machine.name !== "chemical-plant") return undefined;
+  if (plan.targetType === "fluid" && planned.recipe.machine.name !== "chemical-plant") return undefined;
   // Factorio's rotated crafting-with-fluid socket needs the legacy
   // rotation-aware bridge. Keep the compact row for its proven west-facing
   // orientation and let the established compiler handle other rotations.
-  if (fluidIngredients.length > 0 && inputSide !== "west") return undefined;
+  if (fluidIngredients.length > 0 && planned.recipe.machine.name === "assembling-machine-3" &&
+    inputSide !== "west") return undefined;
 
   const belt = BELTS[beltTier];
   const undergroundName = beltTier === "yellow"
@@ -3300,6 +3354,7 @@ export function buildBoundaryRecipeLayout(
       ? "fast-underground-belt"
       : "express-underground-belt";
   const usesTwoFaces = itemIngredients.length > 2;
+  const twoFluidChemical = fluidIngredients.length === 2 && planned.recipe.machine.name === "chemical-plant";
   const rowCapacity = 12;
   const rowCount = Math.max(1, Math.ceil(planned.machineCount / rowCapacity));
   const rowMachines = distributeMachines(planned.machineCount, rowCount);
@@ -3338,24 +3393,36 @@ export function buildBoundaryRecipeLayout(
         -4,
         rowLastMachineX + 2,
         feederY,
-        usesTwoFaces ? machineXs.map((centerX) => centerX + 3) : [],
+        usesTwoFaces
+          ? machineXs.map((centerX) => centerX + 3)
+          : plan.targetType === "fluid"
+            ? machineXs.map((centerX) => centerX - 1)
+            : [],
       );
     });
 
-    const outputY = usesTwoFaces ? machineY + 6 : machineY - 3;
+    const outputY = plan.targetType === "fluid"
+      ? machineY + 5
+      : usesTwoFaces
+        ? machineY + 6
+        : twoFluidChemical
+          ? machineY + 3
+          : machineY - 3;
     outputRows.push(outputY);
     pipeCrossingRows.push(outputY);
-    addHorizontalBeltCrossings(
-      drafts,
-      "output-belt",
-      planned.material,
-      belt.entityName,
-      undergroundName,
-      -3,
-      collectorX - 1,
-      outputY,
-      !usesTwoFaces && fluidIngredients.length > 0 ? machineXs : [],
-    );
+    if (plan.targetType === "item") {
+      addHorizontalBeltCrossings(
+        drafts,
+        "output-belt",
+        planned.material,
+        belt.entityName,
+        undergroundName,
+        -3,
+        collectorX - 1,
+        outputY,
+        !usesTwoFaces && fluidIngredients.length > 0 && !twoFluidChemical ? machineXs : [],
+      );
+    }
 
     machineXs.forEach((centerX) => {
       drafts.push({
@@ -3379,17 +3446,19 @@ export function buildBoundaryRecipeLayout(
           direction: north ? 0 : 8,
         });
       });
-      drafts.push({
-        role: "output-inserter",
-        material: planned.material,
-        recipe: planned.recipe.id,
-        name: "bulk-inserter",
-        position: usesTwoFaces
-          ? tilePosition(centerX + 2, machineY)
-          : tilePosition(centerX + 1, machineY - 2),
-        direction: usesTwoFaces ? 12 : 8,
-      });
-      if (usesTwoFaces) {
+      if (plan.targetType === "item") drafts.push({
+          role: "output-inserter",
+          material: planned.material,
+          recipe: planned.recipe.id,
+          name: "bulk-inserter",
+          position: usesTwoFaces
+            ? tilePosition(centerX + 2, machineY)
+            : twoFluidChemical
+              ? tilePosition(centerX, machineY + 2)
+            : tilePosition(centerX + 1, machineY - 2),
+          direction: usesTwoFaces ? 12 : twoFluidChemical ? 0 : 8,
+        });
+      if (plan.targetType === "item" && usesTwoFaces) {
         addVerticalBelt(
           drafts,
           planned.material,
@@ -3406,17 +3475,17 @@ export function buildBoundaryRecipeLayout(
           8,
         );
       }
-      if (fluidIngredients.length > 0) {
-        const fluid = fluidIngredients[0];
+      fluidIngredients.forEach((fluid, fluidIndex) => {
         const connectorX = planned.recipe.machine.name === "chemical-plant"
-          ? centerX - 1
+          ? centerX + (fluidIndex === 0 ? -1 : 1)
           : centerX;
+        const entranceY = machineY - 4 - fluidIndex * 2;
         drafts.push({
           role: "pipe-to-ground",
           material: fluid.name,
           recipe: planned.recipe.id,
           name: "pipe-to-ground",
-          position: tilePosition(connectorX, machineY - 4),
+          position: tilePosition(connectorX, entranceY),
           direction: 0,
         });
         drafts.push({
@@ -3427,6 +3496,25 @@ export function buildBoundaryRecipeLayout(
           position: tilePosition(connectorX, machineY - 2),
           direction: 8,
         });
+      });
+      if (plan.targetType === "fluid") {
+        const connectorX = centerX - 1;
+        drafts.push({
+          role: "pipe-to-ground",
+          material: planned.material,
+          recipe: planned.recipe.id,
+          name: "pipe-to-ground",
+          position: tilePosition(connectorX, machineY + 2),
+          direction: 0,
+        });
+        drafts.push({
+          role: "pipe-to-ground",
+          material: planned.material,
+          recipe: planned.recipe.id,
+          name: "pipe-to-ground",
+          position: tilePosition(connectorX, machineY + 4),
+          direction: 8,
+        });
       }
       drafts.push({
         role: "power-pole",
@@ -3435,11 +3523,26 @@ export function buildBoundaryRecipeLayout(
       });
     });
 
-    if (fluidIngredients.length > 0) {
-      const fluidY = machineY - 5;
+    fluidIngredients.forEach((fluid, fluidIndex) => {
+      const fluidY = machineY - 5 - fluidIndex * 2;
+      const fluidTrunkX = -2 - fluidIndex * 2;
       protectedRows.push(fluidY);
-      for (let x = -2; x <= rowLastMachineX; x += 1) {
-        drafts.push({ role: "pipe", material: fluidIngredients[0].name, name: "pipe", position: tilePosition(x, fluidY) });
+      const finalHeaderX = planned.recipe.machine.name === "chemical-plant"
+        ? rowLastMachineX + (fluidIndex === 0 ? -1 : 1)
+        : rowLastMachineX;
+      for (let x = fluidTrunkX; x <= finalHeaderX; x += 1) {
+        drafts.push({ role: "pipe", material: fluid.name, name: "pipe", position: tilePosition(x, fluidY) });
+      }
+    });
+    if (plan.targetType === "fluid") {
+      for (let x = machineXs[0] - 1; x <= collectorX; x += 1) {
+        drafts.push({
+          role: "pipe",
+          material: planned.material,
+          recipe: planned.recipe.id,
+          name: "pipe",
+          position: tilePosition(x, outputY),
+        });
       }
     }
   });
@@ -3448,14 +3551,18 @@ export function buildBoundaryRecipeLayout(
   // merge because the planner already caps their combined rate at one belt.
   const minimumOutputY = Math.min(...outputRows);
   const maximumOutputY = Math.max(...outputRows);
-  for (let y = minimumOutputY; y <= maximumOutputY; y += 1) {
-    drafts.push({
-      role: "output-belt",
-      material: planned.material,
-      name: belt.entityName,
-      position: tilePosition(collectorX, y),
-      direction: y === maximumOutputY ? 4 : 8,
-    });
+  if (plan.targetType === "item") {
+    for (let y = minimumOutputY; y <= maximumOutputY; y += 1) {
+      drafts.push({
+        role: "output-belt",
+        material: planned.material,
+        name: belt.entityName,
+        position: tilePosition(collectorX, y),
+        direction: y === maximumOutputY ? 4 : 8,
+      });
+    }
+  } else if (minimumOutputY !== maximumOutputY) {
+    addVerticalPipe(drafts, planned.material, collectorX, minimumOutputY + 1, maximumOutputY - 1, []);
   }
 
   const inputPositions = addBoundaryFanout(
@@ -3469,36 +3576,66 @@ export function buildBoundaryRecipeLayout(
     itemIngredients.map((ingredient) => ingredient.name),
   );
 
-  if (fluidIngredients.length > 0) {
-    const fluid = fluidIngredients[0];
+  fluidIngredients.forEach((fluid, fluidIndex) => {
     const itemPortXs = [...inputPositions.values()].map((position) => Math.floor(position.x));
-    const outerX = itemPortXs.length > 0 ? Math.min(...itemPortXs) : -12;
-    const firstFluidY = rowYs[0] - 5;
-    const lastFluidY = rowYs.at(-1)! - 5;
-    addPumpFreeHorizontalPipe(drafts, fluid.name, outerX, -3, firstFluidY);
+    const existingFluidPortXs = fluidIngredients.slice(0, fluidIndex)
+      .map((previous) => inputPositions.get(previous.name))
+      .filter((position): position is { x: number; y: number } => position !== undefined)
+      .map((position) => Math.floor(position.x));
+    const outerX = plan.targetType === "item" && fluidIngredients.length === 1
+      ? (itemPortXs.length > 0 ? Math.min(...itemPortXs) : -12)
+      : Math.min(-12 - fluidIndex * 3, ...itemPortXs, ...existingFluidPortXs);
+    const fluidTrunkX = -2 - fluidIndex * 2;
+    const firstFluidY = rowYs[0] - 5 - fluidIndex * 2;
+    const lastFluidY = rowYs.at(-1)! - 5 - fluidIndex * 2;
+    addPumpFreeHorizontalPipe(drafts, fluid.name, outerX, fluidTrunkX - 1, firstFluidY);
     if (lastFluidY !== firstFluidY) {
       addVerticalPipe(
         drafts,
         fluid.name,
-        -2,
+        fluidTrunkX,
         firstFluidY + 1,
         lastFluidY - 1,
         pipeCrossingRows,
       );
     }
     inputPositions.set(fluid.name, tilePosition(outerX, firstFluidY));
-  }
+  });
 
   connectPowerComponents(drafts);
   const rotationQuarterTurns = (SIDE_INDEX[inputSide] - SIDE_INDEX.west + 4) % 4;
   const canonicalOutputSide = INDEX_SIDE[(SIDE_INDEX[outputSide] - rotationQuarterTurns + 4) % 4];
-  const finalOutput = routeCanonicalOutput(
-    drafts,
-    { x: collectorX, y: maximumOutputY },
-    canonicalOutputSide,
-    planned.material,
-    belt.entityName,
-  );
+  let finalOutput: { x: number; y: number };
+  if (plan.targetType === "item") {
+    finalOutput = routeCanonicalOutput(
+      drafts,
+      { x: collectorX, y: maximumOutputY },
+      canonicalOutputSide,
+      planned.material,
+      belt.entityName,
+    );
+  } else {
+    const minimumX = Math.floor(Math.min(...drafts.map((draft) => draft.position.x)));
+    const maximumX = Math.floor(Math.max(...drafts.map((draft) => draft.position.x)));
+    const minimumY = Math.floor(Math.min(...drafts.map((draft) => draft.position.y)));
+    const maximumY = Math.floor(Math.max(...drafts.map((draft) => draft.position.y)));
+    const bypassX = maximumX + 3;
+    const northY = minimumY - 3;
+    const southY = maximumY + 3;
+    addPumpFreeHorizontalPipe(drafts, planned.material, collectorX + 1, bypassX, maximumOutputY);
+    if (canonicalOutputSide === "east") {
+      finalOutput = { x: bypassX, y: maximumOutputY };
+    } else if (canonicalOutputSide === "north" || canonicalOutputSide === "south") {
+      const finalY = canonicalOutputSide === "north" ? northY : southY;
+      addVerticalPipe(drafts, planned.material, bypassX, maximumOutputY +
+        (finalY > maximumOutputY ? 1 : -1), finalY, []);
+      finalOutput = { x: bypassX, y: finalY };
+    } else {
+      addVerticalPipe(drafts, planned.material, bypassX, maximumOutputY + 1, southY, []);
+      addPumpFreeHorizontalPipe(drafts, planned.material, minimumX - 3, bypassX - 1, southY);
+      finalOutput = { x: minimumX - 3, y: southY };
+    }
+  }
   return {
     drafts,
     inputPositions,
@@ -3677,15 +3814,21 @@ function buildRecursiveItemComposition(
   beltTier: keyof typeof BELTS,
   depth = 0,
 ): CanonicalLayout | undefined {
-  if (depth > 12 || plan.targetType !== "item" || plan.recipes.length < 2 || plan.recipes.length > 8 ||
-    plan.inputs.some((input) => input.type !== "item") ||
-    plan.recipes.some((planned) => planned.materialType !== "item" ||
-      planned.recipe.ingredients.some((ingredient) => ingredient.type !== "item")) ||
+  if (depth > 12 || plan.targetType !== "item" || plan.recipes.length < 2 || plan.recipes.length > 12 ||
+    plan.recipes.some((planned) => {
+      const itemCount = planned.recipe.ingredients.filter((ingredient) => ingredient.type === "item").length;
+      const fluidCount = planned.recipe.ingredients.filter((ingredient) => ingredient.type === "fluid").length;
+      return planned.materialType !== "item" || itemCount > 4 || fluidCount > 2 ||
+        (fluidCount > 1 && planned.recipe.machine.name !== "chemical-plant") ||
+        (fluidCount > 0 && planned.recipe.machine.name !== "assembling-machine-3" &&
+          planned.recipe.machine.name !== "chemical-plant");
+    }) ||
     plan.recipes.reduce((sum, planned) => sum + planned.machineCount, 0) > 40) return undefined;
   const target = plan.recipes.find((planned) => planned.material === plan.target);
   if (!target || target.recipe.ingredients.length === 0 || target.recipe.ingredients.length > 4) return undefined;
   const byMaterial = new Map(plan.recipes.map((planned) => [planned.material, planned]));
   const actualBoundaries = new Set(plan.inputs.map((input) => input.name));
+  const inputTypeByMaterial = new Map(plan.inputs.map((input) => [input.name, input.type]));
   const internalIngredients = target.ingredientRates.filter((ingredient) => byMaterial.has(ingredient.name));
   if (internalIngredients.length === 0) return undefined;
 
@@ -3728,7 +3871,13 @@ function buildRecursiveItemComposition(
       outputPosition: cover.layout.outputPosition,
       outputDirection: 4,
     };
-    return { planned: cover.planned, panels: [panel, mirrorSourcePanelVertically(panel)] };
+    const hasFluidContract = cover.plan.inputs.some((input) => input.type === "fluid") ||
+      cover.plan.recipes.some((planned) =>
+        planned.recipe.ingredients.some((ingredient) => ingredient.type === "fluid"));
+    return {
+      planned: cover.planned,
+      panels: hasFluidContract ? [panel] : [panel, mirrorSourcePanelVertically(panel)],
+    };
   });
   const packingStates = searchPanelPackings(
     baseDrafts,
@@ -3752,7 +3901,7 @@ function buildRecursiveItemComposition(
       .filter(([material]) => actualBoundaries.has(material))
       .map(([material, position]) => ({
         material,
-        type: "item" as const,
+        type: inputTypeByMaterial.get(material) ?? "item",
         x: Math.floor(position.x),
         y: Math.floor(position.y),
       }));
@@ -3762,7 +3911,7 @@ function buildRecursiveItemComposition(
       const placed = translateSourcePanel(trialDrafts, geometry.panel, translateX, translateY);
       placed.inputs.forEach((position, material) => externalTaps.push({
         material,
-        type: "item",
+        type: inputTypeByMaterial.get(material) ?? "item",
         x: Math.floor(position.x),
         y: Math.floor(position.y),
       }));
@@ -3810,16 +3959,71 @@ function buildRecursiveItemComposition(
     });
     externalTaps.forEach((tap) => { tap.x += translateX; });
     const shiftedTerminalOutput = { x: terminalOutput.x + translateX, y: terminalOutput.y };
-    const inputPositions = addRoutedBoundaryFanout(
-      trialDrafts,
-      externalTaps,
-      plan,
-      belt.entityName,
-      belt.splitterEntityName,
-      undergroundName,
-      plan.inputs.map((input) => input.name),
-      28,
-    );
+    const itemTaps = externalTaps.filter((tap) => tap.type === "item");
+    const fluidTaps = externalTaps.filter((tap) => tap.type === "fluid");
+    const itemOrder = plan.inputs.filter((input) => input.type === "item").map((input) => input.name);
+    const fluidOrder = plan.inputs.filter((input) => input.type === "fluid").map((input) => input.name);
+    let inputPositions: Map<string, { x: number; y: number }> | undefined;
+    if (fluidTaps.length === 0) {
+      // Preserve the proven item-only in-place routing path. Only the fluid
+      // branch needs a cloned trial so it can attempt a second topology.
+      inputPositions = addRoutedBoundaryFanout(
+        trialDrafts,
+        externalTaps,
+        plan,
+        belt.entityName,
+        belt.splitterEntityName,
+        undergroundName,
+        plan.inputs.map((input) => input.name),
+        28,
+      );
+    } else {
+      let boundaryDrafts = trialDrafts.map((draft) => ({
+        ...draft,
+        position: { ...draft.position },
+      }));
+      inputPositions = addRoutedBoundaryFanout(
+        boundaryDrafts,
+        itemTaps,
+        plan,
+        belt.entityName,
+        belt.splitterEntityName,
+        undergroundName,
+        itemOrder,
+        28,
+      );
+      if (!inputPositions) {
+      // Radial and high-arity cells already expose their ports on a western
+      // frontier.  A deterministic splitter-spine is a useful second search
+      // topology when the belt A* congests itself while connecting several
+      // repeated boundary materials.  It is still subjected to the complete
+      // collision, underground, isolation, and live-throughput validators.
+        boundaryDrafts = trialDrafts.map((draft) => ({
+          ...draft,
+          position: { ...draft.position },
+        }));
+        inputPositions = addBoundaryFanout(
+          boundaryDrafts,
+          itemTaps,
+          plan,
+          belt.entityName,
+          belt.splitterEntityName,
+          undergroundName,
+          [],
+          itemOrder,
+        );
+      }
+      const fluidInputPositions = addFluidBoundaryFanout(
+        boundaryDrafts,
+        fluidTaps,
+        fluidOrder,
+        itemOrder.length,
+        28,
+      );
+      fluidInputPositions.forEach((position, material) => inputPositions?.set(material, position));
+      trialDrafts.length = 0;
+      trialDrafts.push(...boundaryDrafts);
+    }
     if (!inputPositions || inputPositions.size !== plan.inputs.length) {
       boundaryFailures += 1;
       lastBoundaryDetail = ` expected=${plan.inputs.map((input) => input.name).join("+")}` +
@@ -3938,6 +4142,7 @@ function normalizeCellLayout(layout: CanonicalLayout): CanonicalLayout & { width
 function sizeBoundaryCellMachines(plan: ChainPlan): void {
   const planned = plan.recipes[0];
   const ordered = [...planned.ingredientRates]
+    .filter((ingredient) => ingredient.type === "item")
     .sort((left, right) => right.perSecond - left.perSecond ||
       planned.recipe.ingredients.findIndex((ingredient) => ingredient.name === left.name) -
         planned.recipe.ingredients.findIndex((ingredient) => ingredient.name === right.name));
@@ -4533,7 +4738,11 @@ export function buildRecursiveCellLayout(
   outputSide: Side,
   beltTier: keyof typeof BELTS,
 ): CanonicalLayout | undefined {
-  if (plan.recipes.length < 4) return undefined;
+  // The routed beam is also valuable for shallow manufactured-product DAGs.
+  // Earlier versions withheld it below four recipes because coupled rows were
+  // usually sufficient; the human corpus shows that wider two/three-stage
+  // terminals otherwise fall all the way back to the sparse adaptive bus.
+  if (plan.recipes.length < 2) return undefined;
   const terminal = plan.recipes.find((planned) => planned.material === plan.target);
   if (!terminal || terminal.recipe.ingredients.length > 4) return undefined;
   if (terminal.recipe.ingredients.length > 2) {
