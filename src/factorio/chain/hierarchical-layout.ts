@@ -722,13 +722,14 @@ function panelPlacementCandidates(
   virtualPort: { x: number; y: number },
   limit: number,
   preferWestOfPort = false,
+  searchPadding = 2,
 ): PanelPackingState[] {
   const candidates: Array<{ translateX: number; translateY: number; score: number;
     minimumX: number; maximumX: number; minimumY: number; maximumY: number }> = [];
-  const minimumTranslateX = state.minimumX - geometry.maximumX - 2;
-  const maximumTranslateX = state.maximumX - geometry.minimumX + 2;
-  const minimumTranslateY = state.minimumY - geometry.maximumY - 2;
-  const maximumTranslateY = state.maximumY - geometry.minimumY + 2;
+  const minimumTranslateX = state.minimumX - geometry.maximumX - searchPadding;
+  const maximumTranslateX = state.maximumX - geometry.minimumX + searchPadding;
+  const minimumTranslateY = state.minimumY - geometry.maximumY - searchPadding;
+  const maximumTranslateY = state.maximumY - geometry.minimumY + searchPadding;
   const localOutput = floorPosition(geometry.panel.outputPosition);
   const outputStep = geometry.panel.outputDirection === 12 ? -1 : 1;
   for (let translateX = minimumTranslateX; translateX <= maximumTranslateX; translateX += 1) {
@@ -1627,14 +1628,23 @@ function addRoutedBoundaryFanout(
   splitterName: string,
   undergroundName: string,
   requestedMaterialOrder: string[],
+  trunkClearance = 8,
 ): Map<string, { x: number; y: number }> | undefined {
   const inputPositions = new Map<string, { x: number; y: number }>();
   const materialOrder = requestedMaterialOrder.filter((material, index, all) =>
     all.indexOf(material) === index && taps.some((tap) => tap.material === material));
   if (materialOrder.length === 0) return inputPositions;
+  const minimumTapX = Math.min(...taps.map((tap) => tap.x));
   const minimumTapY = Math.min(...taps.map((tap) => tap.y));
   const portRows = materialOrder.map((_, index) => minimumTapY - 8 - index * 4);
-  const trunkXs = materialOrder.map((_, index) => -10 - index * 3);
+  // Anchor the western distribution channel to the ports it actually serves.
+  // The cell cover used to normalize every graph to x=18 and then place the
+  // trunks at an unrelated global x=-10, paying a 28-tile empty corridor even
+  // when routing needed only a narrow turning pocket. Keeping the same
+  // splitter spacing relative to the closest ingress makes this clearance
+  // scale with each anonymous graph while leaving enough room for A* to braid
+  // and turn competing branches.
+  const trunkXs = materialOrder.map((_, index) => minimumTapX - trunkClearance - index * 3);
   const startX = Math.min(...trunkXs) - 6;
   const branches: Array<{ material: string; output: { x: number; y: number }; input: { x: number; y: number } }> = [];
 
@@ -3769,6 +3779,7 @@ function buildRecursiveItemComposition(
       belt.splitterEntityName,
       undergroundName,
       plan.inputs.map((input) => input.name),
+      28,
     );
     if (!inputPositions || inputPositions.size !== plan.inputs.length) {
       boundaryFailures += 1;
@@ -3959,6 +3970,8 @@ function materializeTreePlacement(
   inputSide: Side,
   outputSide: Side,
   beltTier: keyof typeof BELTS,
+  preRoutedDrafts?: Draft[],
+  boundaryClearance = 8,
 ): CanonicalLayout | undefined {
   const belt = BELTS[beltTier];
   const undergroundName = beltTier === "yellow"
@@ -3966,16 +3979,21 @@ function materializeTreePlacement(
     : beltTier === "red"
       ? "fast-underground-belt"
       : "express-underground-belt";
-  const drafts: Draft[] = [];
+  const drafts: Draft[] = preRoutedDrafts?.map((draft) => ({
+    ...draft,
+    position: { ...draft.position },
+  })) ?? [];
   const inputs = new Map<TreeCellNode, Map<string, { x: number; y: number }>>();
   const outputs = new Map<TreeCellNode, { x: number; y: number }>();
   const outputDirections = new Map<TreeCellNode, CardinalDirection>();
   nodes.forEach((node) => {
     const placement = placements.get(node)!;
-    placement.panel.drafts.forEach((draft) => drafts.push({
-      ...draft,
-      position: { x: draft.position.x + placement.x, y: draft.position.y + placement.y },
-    }));
+    if (!preRoutedDrafts) {
+      placement.panel.drafts.forEach((draft) => drafts.push({
+        ...draft,
+        position: { x: draft.position.x + placement.x, y: draft.position.y + placement.y },
+      }));
+    }
     inputs.set(node, new Map([...placement.panel.inputPositions].map(([material, position]) => [material, {
       x: position.x + placement.x,
       y: position.y + placement.y,
@@ -4018,6 +4036,7 @@ function materializeTreePlacement(
     belt.splitterEntityName,
     undergroundName,
     plan.inputs.map((input) => input.name),
+    boundaryClearance,
   );
   if (!inputPositions) return rejectTreePlacement("boundary-routing");
   if (inputPositions.size !== plan.inputs.length || !collisionFreeDrafts(drafts) ||
@@ -4047,15 +4066,15 @@ function materializeTreePlacement(
     const vector = directionVector(inputDraft.direction);
     reservedIngressTiles.add(`${inputTile.x - vector.x},${inputTile.y - vector.y}`);
   });
-  if (!edges.every((edge) => routePanelOutput(
-    drafts,
-    edge.material,
-    edge.output,
-    edge.outputDirection,
-    edge.input,
-    belt.entityName,
-    reservedIngressTiles,
-  ))) return rejectTreePlacement("internal-routing");
+  if (!preRoutedDrafts && !edges.every((edge) => routePanelOutput(
+      drafts,
+      edge.material,
+      edge.output,
+      edge.outputDirection,
+      edge.input,
+      belt.entityName,
+      reservedIngressTiles,
+    ))) return rejectTreePlacement("internal-routing");
   if (!collisionFreeDrafts(drafts) || !undergroundPairingValid(drafts) || crossMaterialTransportFeed(drafts)) {
     return rejectTreePlacement("internal-validation");
   }
@@ -4110,11 +4129,11 @@ export function buildBeamPackedTreeCellLayout(
   outputSide: Side,
   beltTier: keyof typeof BELTS,
 ): CanonicalLayout | undefined {
-  if (plan.targetType !== "item" || plan.recipes.length < 2 || plan.recipes.length > 4 ||
+  if (plan.targetType !== "item" || plan.recipes.length < 2 || plan.recipes.length > 8 ||
     plan.inputs.some((input) => input.type !== "item") ||
     plan.recipes.some((planned) => planned.materialType !== "item" ||
       planned.recipe.ingredients.some((ingredient) => ingredient.type !== "item")) ||
-    plan.recipes.reduce((sum, planned) => sum + planned.machineCount, 0) > 24) return undefined;
+    plan.recipes.reduce((sum, planned) => sum + planned.machineCount, 0) > 40) return undefined;
   const target = plan.recipes.find((planned) => planned.material === plan.target);
   if (!target) return undefined;
   const root = buildAtomicTree(plan, target, target.outputPerSecond, beltTier, 0, { value: 0 });
@@ -4127,7 +4146,8 @@ export function buildBeamPackedTreeCellLayout(
     const [x, y] = key.split(",").map(Number);
     return { x, y };
   });
-  let states: PanelPackingState[] = [{
+  type RoutedTreePackingState = PanelPackingState & { routedDrafts: Draft[] };
+  let states: RoutedTreePackingState[] = [{
     occupancy: rootOccupancy,
     placements: [],
     minimumX: Math.min(...occupied.map((tile) => tile.x)),
@@ -4135,6 +4155,7 @@ export function buildBeamPackedTreeCellLayout(
     minimumY: Math.min(...occupied.map((tile) => tile.y)),
     maximumY: Math.max(...occupied.map((tile) => tile.y)),
     score: 0,
+    routedDrafts: root.layout.drafts.map((draft) => ({ ...draft, position: { ...draft.position } })),
   }];
   const panelByNode = new Map(order.map((node) => [node, {
     drafts: node.layout.drafts,
@@ -4165,8 +4186,85 @@ export function buildBeamPackedTreeCellLayout(
         y: Math.floor(localPort.y) + parentTranslation.y,
       };
       return geometriesByNode.get(node)!.flatMap((geometry) =>
-        panelPlacementCandidates(state, geometry, virtualPort, 4, false));
-    }).sort((left, right) => left.score - right.score).slice(0, 64);
+        panelPlacementCandidates(state, geometry, virtualPort, 2, true, 5).flatMap((nextState) => {
+          const placement = nextState.placements.at(-1)!;
+          const trialDrafts = state.routedDrafts.map((draft) => ({
+            ...draft,
+            position: { ...draft.position },
+          }));
+          placement.geometry.panel.drafts.forEach((draft) => trialDrafts.push({
+            ...draft,
+            position: {
+              x: draft.position.x + placement.translateX,
+              y: draft.position.y + placement.translateY,
+            },
+          }));
+          if (!collisionFreeDrafts(trialDrafts)) return [];
+          const reservedIngressTiles = new Set<string>();
+          const reservePanelInputs = (
+            panel: SourcePanel,
+            translateX: number,
+            translateY: number,
+          ): void => panel.inputPositions.forEach((position) => {
+            const input = {
+              x: Math.floor(position.x) + translateX,
+              y: Math.floor(position.y) + translateY,
+            };
+            const inputDraft = trialDrafts.find((draft) =>
+              Math.floor(draft.position.x) === input.x && Math.floor(draft.position.y) === input.y &&
+              draft.direction !== undefined &&
+              (draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+                draft.name.includes("splitter")));
+            if (!inputDraft || inputDraft.direction === undefined) return;
+            const vector = directionVector(inputDraft.direction);
+            reservedIngressTiles.add(`${input.x - vector.x},${input.y - vector.y}`);
+          });
+          reservePanelInputs({
+            drafts: root.layout.drafts,
+            inputPositions: root.layout.inputPositions,
+            outputPosition: root.layout.outputPosition,
+            outputDirection: 4,
+          }, 0, 0);
+          nextState.placements.forEach((placed) => reservePanelInputs(
+            placed.geometry.panel,
+            placed.translateX,
+            placed.translateY,
+          ));
+          const childOutput = {
+            x: placement.geometry.panel.outputPosition.x + placement.translateX,
+            y: placement.geometry.panel.outputPosition.y + placement.translateY,
+          };
+          if (!routePanelOutput(
+            trialDrafts,
+            node.planned.material,
+            childOutput,
+            placement.geometry.panel.outputDirection,
+            virtualPort,
+            BELTS[beltTier].entityName,
+            reservedIngressTiles,
+          ) || !collisionFreeDrafts(trialDrafts) || !undergroundPairingValid(trialDrafts) ||
+            crossMaterialTransportFeed(trialDrafts)) return [];
+          const routedTiles = trialDrafts.flatMap(occupiedDraftTiles);
+          const routedOccupancy = new Set(routedTiles.map((tile) => `${tile.x},${tile.y}`));
+          const routedTransportCost = trialDrafts.filter((draft) =>
+            draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+            draft.name.includes("splitter")).length;
+          return [{
+            ...nextState,
+            occupancy: routedOccupancy,
+            minimumX: Math.min(...routedTiles.map((tile) => tile.x)),
+            maximumX: Math.max(...routedTiles.map((tile) => tile.x)),
+            minimumY: Math.min(...routedTiles.map((tile) => tile.y)),
+            maximumY: Math.max(...routedTiles.map((tile) => tile.y)),
+            score: nextState.score + routedTransportCost * 160 +
+              Math.max(
+                Math.max(...routedTiles.map((tile) => tile.x)) - Math.min(...routedTiles.map((tile) => tile.x)) + 1,
+                Math.max(...routedTiles.map((tile) => tile.y)) - Math.min(...routedTiles.map((tile) => tile.y)) + 1,
+              ) * 300,
+            routedDrafts: trialDrafts,
+          } satisfies RoutedTreePackingState];
+        }));
+    }).sort((left, right) => left.score - right.score).slice(0, 12);
     if (states.length === 0) return undefined;
   }
   const candidates: CanonicalLayout[] = [];
@@ -4187,7 +4285,17 @@ export function buildBeamPackedTreeCellLayout(
       x: state.placements[index].translateX,
       y: state.placements[index].translateY,
     }));
-    const candidate = materializeTreePlacement(plan, root, nodes, placements, inputSide, outputSide, beltTier);
+    const candidate = materializeTreePlacement(
+      plan,
+      root,
+      nodes,
+      placements,
+      inputSide,
+      outputSide,
+      beltTier,
+      state.routedDrafts,
+      16,
+    );
     if (candidate) candidates.push(candidate);
   }
   return candidates.sort((left, right) => {
@@ -4223,8 +4331,8 @@ export function buildFlattenedTreeCellLayout(
   const candidates: CanonicalLayout[] = [];
   let floorplans = 0;
 
-  for (const columnGap of [4, 6, 8, 10]) {
-    for (const rowGap of [2, 4, 6]) {
+  for (const columnGap of [0, 1, 2, 3, 4, 6, 8, 10]) {
+    for (const rowGap of [0, 1, 2, 3, 4, 6]) {
       for (const reverseSiblings of [false, true]) {
         floorplans += 1;
         const maximumWidthByDepth = new Map<number, number>();
@@ -4302,39 +4410,45 @@ export function buildRecursiveCellLayout(
   if (terminal.recipe.ingredients.length > 2) {
     return buildRecursiveItemComposition(plan, inputSide, outputSide, beltTier);
   }
-  const candidates: CanonicalLayout[] = [];
   // The flattened tree router has live-engine proof for one- and two-contract
   // terminals. Wider terminal recipes use the recursive composition below:
   // it retains the complete, independently validated boundary-recipe cell and
   // connects each child at that cell's original input port. This avoids the
   // alternating-feeder starvation that occurs when a flat tree independently
   // routes into a three/four-contract terminal.
-  const factories = [
-    () => buildBeamPackedTreeCellLayout(plan, inputSide, outputSide, beltTier),
-    () => buildFlattenedTreeCellLayout(plan, inputSide, outputSide, beltTier),
-  ];
-  for (const factory of factories) {
-    try {
-      const candidate = factory();
-      if (candidate) candidates.push(candidate);
-    } catch {
-      // Every floorplanner is an independent exact-cover search coordinate.
-    }
+  const candidates: CanonicalLayout[] = [];
+  try {
+    const routedBeam = buildBeamPackedTreeCellLayout(plan, inputSide, outputSide, beltTier);
+    if (routedBeam) candidates.push(routedBeam);
+  } catch {
+    // A routed beam is accepted only when every edge and boundary survives the
+    // same physical validators as the deterministic floorplanner below.
   }
-  if (candidates.length === 0) {
-    try {
-      const candidate = buildRecursiveItemComposition(plan, inputSide, outputSide, beltTier);
-      if (candidate) candidates.push(candidate);
-    } catch {
-      // The general production-graph compiler remains available as a separate
-      // validated candidate if no recursive cover is routable.
-    }
+  try {
+    const flattened = buildFlattenedTreeCellLayout(plan, inputSide, outputSide, beltTier);
+    if (flattened) candidates.push(flattened);
+  } catch {
+    // Congestion feedback may exhaust the compact floorplan coordinates.
   }
-  return candidates.sort((left, right) => {
-    const leftEnvelope = layoutEnvelope(left);
-    const rightEnvelope = layoutEnvelope(right);
-    return leftEnvelope.area - rightEnvelope.area || left.drafts.length - right.drafts.length;
-  })[0];
+  if (candidates.length > 0) {
+    const physicalCost = (layout: CanonicalLayout): number => {
+      const envelope = layoutEnvelope(layout);
+      const transport = layout.drafts.filter((draft) =>
+        draft.name.includes("transport-belt") || draft.name.includes("underground-belt") ||
+        draft.name.includes("splitter")).length;
+      // A tile of empty envelope and two surface transport entities carry
+      // comparable cost. This keeps a very long belt ribbon from beating a
+      // slightly larger but materially denser two-dimensional factory.
+      return envelope.area + transport * 2 + Math.max(envelope.width, envelope.height) * 2;
+    };
+    return candidates.sort((left, right) => physicalCost(left) - physicalCost(right) ||
+      left.drafts.length - right.drafts.length)[0];
+  }
+  try {
+    return buildRecursiveItemComposition(plan, inputSide, outputSide, beltTier);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
