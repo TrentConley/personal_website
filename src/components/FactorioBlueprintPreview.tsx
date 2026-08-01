@@ -33,7 +33,9 @@ interface SpriteSpec {
 }
 
 interface EntityRenderData {
+  underlays?: SpriteSpec[];
   main?: SpriteSpec;
+  overlay?: SpriteSpec;
   shadow?: SpriteSpec;
 }
 
@@ -185,6 +187,57 @@ function spriteSpec(
   };
 }
 
+function shiftedSprite(spec: SpriteSpec, x: number, y: number): SpriteSpec {
+  return {
+    ...spec,
+    shiftX: (spec.shiftX ?? 0) + x,
+    shiftY: (spec.shiftY ?? 0) + y,
+  };
+}
+
+function relatedBeltName(entityName: string): string {
+  if (entityName.startsWith("express-")) return "express-transport-belt";
+  if (entityName.startsWith("fast-")) return "fast-transport-belt";
+  return "transport-belt";
+}
+
+function incomingSideLoad(
+  planned: ChainPlannedEntity,
+  entitiesAtPosition: Map<string, ChainPlannedEntity>,
+): boolean {
+  const currentDirection = planned.entity.direction ?? 0;
+  for (const incomingDirection of [0, 4, 8, 12]) {
+    if (incomingDirection === currentDirection || incomingDirection === (currentDirection + 8) % 16) continue;
+    const vector = DIRECTION_VECTORS[incomingDirection];
+    const candidate = entitiesAtPosition.get(positionKey({
+      x: planned.entity.position.x - vector.x,
+      y: planned.entity.position.y - vector.y,
+    }));
+    if (isBelt(candidate)
+      && candidate?.entity.direction === incomingDirection
+      && candidate.material === planned.material) return true;
+  }
+  return false;
+}
+
+function outgoingSideLoad(
+  planned: ChainPlannedEntity,
+  entitiesAtPosition: Map<string, ChainPlannedEntity>,
+): boolean {
+  const currentDirection = planned.entity.direction ?? 0;
+  const vector = DIRECTION_VECTORS[currentDirection];
+  const candidate = entitiesAtPosition.get(positionKey({
+    x: planned.entity.position.x + vector.x,
+    y: planned.entity.position.y + vector.y,
+  }));
+  const candidateDirection = candidate?.entity.direction;
+  return isBelt(candidate)
+    && candidate?.material === planned.material
+    && candidateDirection !== undefined
+    && candidateDirection !== currentDirection
+    && candidateDirection !== (currentDirection + 8) % 16;
+}
+
 function loadAsset(path: string): Promise<void> {
   let image = imageCache.get(path);
   if (!image) {
@@ -306,17 +359,50 @@ function renderDataFor(
   }
   if (entity.name.endsWith("underground-belt")) {
     const beltType = entity.type === "input" ? "input" : "output";
-    return { main: spriteSpec(`${entity.name}-${beltType}-${direction}`, 192, 192) };
+    const sideLoading = beltType === "input"
+      ? incomingSideLoad(planned, entitiesAtPosition)
+      : outgoingSideLoad(planned, entitiesAtPosition);
+    return {
+      underlays: [spriteSpec(`${relatedBeltName(entity.name)}-${direction}`, 128, 128)],
+      main: spriteSpec(
+        `${entity.name}-${beltType}${sideLoading ? "-side" : ""}-${direction}`,
+        192,
+        192,
+      ),
+    };
   }
   if (entity.name.endsWith("splitter")) {
+    const expressWest = entity.name === "express-splitter" && direction === "west";
     const dimensions: Record<DirectionName, [number, number, number, number]> = {
       north: [160, 70, 7, 0],
       east: [90, 84, 4, 13],
       south: [164, 64, 4, 0],
-      west: [90, 86, 6, 12],
+      west: [expressWest ? 94 : 90, 86, expressWest ? 5 : 6, 12],
     };
     const [width, height, shiftX, shiftY] = dimensions[direction];
-    return { main: spriteSpec(`${entity.name}-${direction}`, width, height, 0.5, shiftX, shiftY) };
+    const belt = spriteSpec(`${relatedBeltName(entity.name)}-${direction}`, 128, 128);
+    const laneOffsets = direction === "north" || direction === "south"
+      ? [[-0.5, 0], [0.5, 0]]
+      : [[0, -0.5], [0, 0.5]];
+    const patchDimensions = direction === "east"
+      ? [90, 104, 4, -20] as const
+      : direction === "west"
+        ? [expressWest ? 94 : 90, 96, expressWest ? 5 : 6, -18] as const
+        : undefined;
+    return {
+      underlays: laneOffsets.map(([x, y]) => shiftedSprite(belt, x, y)),
+      main: spriteSpec(`${entity.name}-${direction}`, width, height, 0.5, shiftX, shiftY),
+      overlay: patchDimensions
+        ? spriteSpec(
+            `${entity.name}-${direction}-top-patch`,
+            patchDimensions[0],
+            patchDimensions[1],
+            0.5,
+            patchDimensions[2],
+            patchDimensions[3],
+          )
+        : undefined,
+    };
   }
   if (entity.name === "pipe") {
     const spriteName = pipeSpriteName(planned, entitiesAtPosition);
@@ -411,7 +497,9 @@ function drawEntity(
     context.fillRect(-size.width * 0.42, -size.height * 0.42, size.width * 0.84, size.height * 0.84);
   } else {
     if (renderData.shadow) drawSprite(context, renderData.shadow, 0.72);
+    for (const underlay of renderData.underlays ?? []) drawSprite(context, underlay);
     drawSprite(context, renderData.main);
+    if (renderData.overlay) drawSprite(context, renderData.overlay);
     if (role === "input-inserter" || role === "output-inserter") drawInserterArm(context, planned);
     if (isBelt(planned) && material && entity.entity_number % 6 === 0 && pixelsPerTile >= 4.5) {
       context.fillStyle = "rgba(17, 20, 16, 0.78)";
@@ -553,7 +641,12 @@ export function FactorioBlueprintPreview({ blueprint }: { blueprint: GeneratedCh
   );
   const assetPaths = useMemo(() => [...new Set([
     GROUND_TEXTURE,
-    ...[...entityRenderData.values()].flatMap((data) => [data.main?.path, data.shadow?.path]
+    ...[...entityRenderData.values()].flatMap((data) => [
+      ...(data.underlays ?? []).map((underlay) => underlay.path),
+      data.main?.path,
+      data.overlay?.path,
+      data.shadow?.path,
+    ]
       .filter((path): path is string => Boolean(path))),
     ...blueprint.entities.map((planned) => planned.material)
       .filter((name): name is string => Boolean(name) && !name?.includes("+"))
