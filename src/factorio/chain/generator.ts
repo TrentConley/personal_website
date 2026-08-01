@@ -4,8 +4,8 @@ import { BELTS } from "../core/throughput";
 import { BELT_TIERS, SIDES } from "../core/types";
 import type { BlueprintDocument } from "../core/types";
 import { materialType } from "./catalog";
+import { synthesizeGlobalFactory } from "./global-synthesis";
 import { finalizeLayout } from "./layout";
-import { buildSpatialLayoutCandidates } from "./optimized-layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
 import type {
   ChainGenerationProgressReporter,
@@ -35,16 +35,17 @@ export function generateChainBlueprint(
   const plan = planChain(resolved);
   // Every emitted blueprint must come from a compiler that passed collision,
   // underground-pairing, and material-isolation validation. Unsupported graph
-  // shapes fail here instead of silently dropping to the legacy linear bus.
+  // shapes fail here instead of silently switching to a second compiler.
   reportProgress?.({
     phase: "routing",
-    detail: "Searching compact machine blocks and routing every belt and pipe",
+    detail: "Searching whole-factory placements and routing every belt and pipe",
   });
-  const spatialCandidates = buildSpatialLayoutCandidates(
+  const spatialCandidates = synthesizeGlobalFactory(
     plan,
     resolved.inputSide,
     resolved.outputSide,
     resolved.beltTier,
+    (detail) => reportProgress?.({ phase: "routing", detail }),
   );
   const selectedSpatialCandidate = spatialCandidates[0];
   reportProgress?.({
@@ -69,7 +70,7 @@ export function generateChainBlueprint(
         `Vanilla Factorio 2.0 recursive factory. Target ${plan.effectiveOutputPerSecond.toFixed(6)} ${plan.target}/s` +
         `${plan.clamped ? ` (requested ${plan.requestedOutputPerSecond.toFixed(6)}/s; ${plan.limitingConstraints.map((constraint) => constraint.id).join(", ")})` : ""}. ` +
         `Inputs: ${plan.inputs.map((input) => `${input.name} ${input.requiredPerSecond.toFixed(6)}/s`).join(", ")}. ` +
-        "No modules or beacons. Connect any substation to power.",
+        "No modules or beacons. Connect any included pole to power.",
       icons,
       entities: layout.entities.map((planned) => planned.entity),
       version: FACTORIO_VERSION,
@@ -109,7 +110,7 @@ export function generateChainBlueprint(
     },
     itemCost,
     spatialOptimization: {
-      strategy: "anonymous-geometry-compiler-v3" as const,
+      strategy: "global-physical-synthesis-v1" as const,
       policy: selectedSpatialCandidate.metrics.policy,
       candidatesAccepted: spatialCandidates.length,
       width: selectedSpatialCandidate.metrics.width,

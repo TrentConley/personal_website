@@ -121,6 +121,7 @@ export type ChainEntityRole =
   | "underground-belt"
   | "pipe"
   | "pipe-to-ground"
+  | "pump"
   | "input-inserter"
   | "output-inserter"
   | "power-pole";
@@ -161,7 +162,7 @@ export interface GeneratedChainBlueprint {
   outputPort: ChainPort;
   itemCost: Record<string, number>;
   spatialOptimization?: {
-    strategy: "anonymous-geometry-compiler-v3";
+    strategy: "global-physical-synthesis-v1";
     policy: string;
     candidatesAccepted: number;
     width: number;

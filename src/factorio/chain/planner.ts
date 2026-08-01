@@ -9,7 +9,12 @@ import type {
   ThroughputConstraint,
 } from "./types";
 
-const MACHINE_UTILIZATION = 0.9;
+// A machine's prototype crafting rate is an unattainable whole-factory bound:
+// even a valid belt network loses brief cycles while inserters switch between
+// recipe-controlled buffers. A five-percent physical reserve was the smallest
+// general margin that sustained a one-blue-belt raw circuit factory in 2.0.77.
+// Stoichiometric flow remains exact; this only rounds rack capacity upward.
+const MACHINE_UTILIZATION = 0.95;
 export const DEFAULT_PIPE_CAPACITY_PER_SECOND = 1_200;
 
 function validatePositive(value: number, label: string): void {
