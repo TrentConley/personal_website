@@ -471,14 +471,16 @@ export function FactorioBlueprintPage() {
                     <div><small>Generated factory</small><h2>{title(generated.result.plan.target)}</h2></div>
                   </div>
                   <span className={`factorio-valid${isGenerating ? " is-updating" : ""}`}>
-                    {isGenerating ? "Previous result · updating" : "✓ Importable envelope"}
+                    {isGenerating
+                      ? "Previous result · updating"
+                      : `✓ ${generated.result.validation.checks.length} final checks passed`}
                   </span>
                 </div>
 
                 <div className="factorio-metrics">
                   <div><small>Promised output</small><strong>{generated.result.plan.effectiveOutputPerSecond.toFixed(3)}<span>/s</span></strong><p>{generated.result.plan.clamped ? `Safely clamped from ${generated.result.plan.requestedOutputPerSecond}/s` : "Requested capacity"}</p></div>
                   <div><small>Machines</small><strong>{generated.result.plan.recipes.reduce((sum, recipe) => sum + recipe.machineCount, 0)}</strong><p>{generated.result.plan.recipes.length} recursive recipes</p></div>
-                  <div><small>Entities</small><strong>{generated.decodedEntityCount.toLocaleString()}</strong><p>{generated.result.spatialOptimization ? `${generated.result.spatialOptimization.width} × ${generated.result.spatialOptimization.height} · ${generated.result.spatialOptimization.policy} packing` : "Decoded from final string"}</p></div>
+                  <div><small>Entities</small><strong>{generated.decodedEntityCount.toLocaleString()}</strong><p>{generated.result.spatialOptimization ? `${generated.result.spatialOptimization.area.toLocaleString()} tiles · ${generated.result.spatialOptimization.transportEntities.toLocaleString()} transport` : "Decoded from final string"}</p></div>
                 </div>
 
                 {generated.result.warnings.map((warning) => (
@@ -486,6 +488,12 @@ export function FactorioBlueprintPage() {
                 ))}
 
                 <FactorioBlueprintPreview blueprint={generated.result} />
+
+                {generated.result.spatialOptimization && (
+                  <p className="factorio-proof">
+                    Integrated machine search · {generated.result.spatialOptimization.directInsertionTransfers} direct transfers · {generated.result.spatialOptimization.mixedMaterialBelts} mixed-lane trunks · {generated.result.spatialOptimization.lnsIterations} large-neighborhood refinements · {generated.result.spatialOptimization.width} × {generated.result.spatialOptimization.height} envelope.
+                  </p>
+                )}
 
                 <div className="factorio-rates">
                   <h3>External input rates</h3>

@@ -1,4 +1,5 @@
 import type { BeltTier, BlueprintDocument, CardinalDirection, Side } from "../core/types";
+import type { ChainValidationReport } from "./validator";
 
 export type MaterialType = "item" | "fluid";
 
@@ -161,8 +162,9 @@ export interface GeneratedChainBlueprint {
   inputPorts: ChainPort[];
   outputPort: ChainPort;
   itemCost: Record<string, number>;
+  validation: ChainValidationReport;
   spatialOptimization?: {
-    strategy: "global-physical-synthesis-v1";
+    strategy: "integrated-machine-synthesis-v2";
     policy: string;
     candidatesAccepted: number;
     width: number;
@@ -170,6 +172,9 @@ export interface GeneratedChainBlueprint {
     area: number;
     transportEntities: number;
     undergroundEntities: number;
+    directInsertionTransfers: number;
+    mixedMaterialBelts: number;
+    lnsIterations: number;
     score: number;
   };
   warnings: string[];

@@ -1,5 +1,9 @@
 import { BELTS } from "../core/throughput";
 import type { CardinalDirection, Side } from "../core/types";
+import {
+  buildIntegratedMachineGraph,
+  deriveDirectInsertionPattern,
+} from "./integrated-graph";
 import type { CanonicalLayout, Draft } from "./layout";
 import type { ChainPlan, MaterialType, PlannedRecipe } from "./types";
 
@@ -45,6 +49,7 @@ interface MachineRack {
   minimumY: number;
   maximumY: number;
   rotatable: boolean;
+  directInsertionTransfers: number;
 }
 
 interface RackPlacement {
@@ -71,18 +76,22 @@ function rackInputRails(rack: MachineRack, material?: string): Rail[] {
   return [...rack.inputs.values(), ...[...rack.additionalInputs.values()].flat()];
 }
 
-function rackOutputRails(rack: MachineRack): Rail[] {
-  return [rack.output, ...rack.additionalOutputs];
+function rackOutputRails(rack: MachineRack, material?: string): Rail[] {
+  const rails = [rack.output, ...rack.additionalOutputs];
+  return material === undefined ? rails : rails.filter((rail) => rail.material === material);
 }
 
 export interface GlobalSynthesisMetrics {
-  policy: "global-physical-synthesis";
+  policy: "integrated-machine-synthesis";
   width: number;
   height: number;
   area: number;
   entityCount: number;
   transportEntities: number;
   undergroundEntities: number;
+  directInsertionTransfers: number;
+  mixedMaterialBelts: number;
+  lnsIterations: number;
   score: number;
 }
 
@@ -221,6 +230,7 @@ function rackFromDrafts(
   rotatable = true,
   additionalInputs = new Map<string, Rail[]>(),
   additionalOutputs: Rail[] = [],
+  directInsertionTransfers = 0,
 ): MachineRack {
   const byKey = new Map<string, Tile>();
   drafts.flatMap(occupiedDraftTiles).forEach((tile) => byKey.set(`${tile.x},${tile.y}`, tile));
@@ -264,6 +274,7 @@ function rackFromDrafts(
     minimumY: Math.min(...occupied.map((tile) => tile.y)),
     maximumY: Math.max(...occupied.map((tile) => tile.y)),
     rotatable,
+    directInsertionTransfers,
   };
 }
 
@@ -285,6 +296,21 @@ function rackTerminalsDoNotConflict(rack: MachineRack): boolean {
     claim({ x: rail.end.x + vector.x, y: rail.end.y + vector.y }, rail.material);
   }
   return [...owners.values()].every((materials) => materials.size === 1);
+}
+
+function rackTerminalsArePhysicallyAccessible(rack: MachineRack): boolean {
+  const occupied = new Set(rack.drafts.flatMap(occupiedDraftTiles).map((tile) => `${tile.x},${tile.y}`));
+  const access: Tile[] = [];
+  for (const rail of rackInputRails(rack)) {
+    const vector = directionVector(rail.direction);
+    access.push({ x: rail.start.x - vector.x, y: rail.start.y - vector.y });
+    access.push({ x: rail.end.x + vector.x, y: rail.end.y + vector.y });
+  }
+  for (const rail of rackOutputRails(rack)) {
+    const vector = directionVector(rail.direction);
+    access.push({ x: rail.end.x + vector.x, y: rail.end.y + vector.y });
+  }
+  return access.every((tile) => !occupied.has(`${tile.x},${tile.y}`));
 }
 
 function buildFaceMachineRack(
@@ -429,6 +455,153 @@ function buildRadialMachineRack(
     direction: 4,
   };
   return rackFromDrafts(planned, drafts, inputs, output, true, additionalInputs);
+}
+
+/**
+ * Searches the tiny per-recipe lane-packing problem and replaces compatible
+ * pairs of item rails with opposite lanes of one shared belt. The partition is
+ * derived only from rates, inserter limits, and belt capacity; product names
+ * never influence the topology. This generalizes the two-ingredient lane
+ * pattern to three- and four-ingredient machines without storing blueprints.
+ */
+function buildLanePackedMachineRack(
+  planned: PlannedRecipe,
+  items: PlannedRecipe["ingredientRates"],
+  beltName: string,
+): MachineRack | undefined {
+  if (items.length < 3 || items.length > 4 || planned.materialType !== "item") return undefined;
+  const beltCapacity = Object.values(BELTS)
+    .find((belt) => belt.entityName === beltName)?.itemsPerSecond ?? 45;
+  const laneCapacity = beltCapacity / 2;
+  const machineCount = planned.machineCount;
+  const pairable = (left: typeof items[number], right: typeof items[number]): boolean =>
+    left.perSecond <= laneCapacity + 1e-9 && right.perSecond <= laneCapacity + 1e-9 &&
+    armsFor(left.perSecond + right.perSecond, machineCount, SAFE_LONG_ITEMS_PER_SECOND) <= 3;
+  const partitions: Array<Array<Array<typeof items[number]>>> = [];
+  const search = (remaining: typeof items, groups: Array<Array<typeof items[number]>>): void => {
+    if (remaining.length === 0) {
+      partitions.push(groups);
+      return;
+    }
+    const [first, ...rest] = remaining;
+    search(rest, [...groups, [first]]);
+    rest.forEach((candidate, index) => {
+      if (!pairable(first, candidate)) return;
+      search(rest.filter((_, restIndex) => restIndex !== index), [...groups, [first, candidate]]);
+    });
+  };
+  search(items, []);
+  const groupRate = (group: Array<typeof items[number]>): number =>
+    group.reduce((sum, ingredient) => sum + ingredient.perSecond, 0);
+  const groups = partitions
+    .filter((partition) => partition.length < items.length && partition.length <= 4)
+    .map((partition) => [...partition].sort((left, right) => groupRate(right) - groupRate(left)))
+    .filter((partition) => {
+      const arms = partition.map((group, index) => armsFor(
+        groupRate(group),
+        machineCount,
+        index < 2 ? SAFE_BULK_ITEMS_PER_SECOND : SAFE_LONG_ITEMS_PER_SECOND,
+      ));
+      return arms.every((count) => count <= 3) &&
+        arms.filter((_, index) => index === 0 || index === 2).reduce((sum, count) => sum + count, 0) <= 3 &&
+        arms.filter((_, index) => index === 1 || index === 3).reduce((sum, count) => sum + count, 0) <= 3;
+    })
+    .sort((left, right) => left.length - right.length ||
+      Math.max(...left.map(groupRate)) - Math.max(...right.map(groupRate)))[0];
+  if (!groups || planned.outputPerSecond / machineCount > SAFE_BULK_ITEMS_PER_SECOND + 1e-9) {
+    return undefined;
+  }
+
+  const pitch = 6;
+  const lastMachineX = (machineCount - 1) * pitch;
+  const railStartX = -2;
+  const railEndX = lastMachineX + 3;
+  const inputYs = [-3, 3, -4, 4];
+  const drafts: Draft[] = [];
+  const inputs = new Map<string, Rail>();
+  groups.forEach((group, groupIndex) => {
+    const y = inputYs[groupIndex];
+    if (group.length === 1) {
+      const ingredient = group[0];
+      inputs.set(ingredient.name, {
+        ...addHorizontalRail(drafts, "ingredient-feeder", ingredient.name, beltName,
+          railStartX, railEndX, y),
+        demandPerSecond: ingredient.perSecond,
+      });
+      return;
+    }
+    // Stagger side-loading stubs outside the machine row. Adjacent ingredient
+    // rails therefore never share a surface tile even when their trunk rows
+    // are one tile apart.
+    const mixed = addMixedMaterialTrunk(
+      drafts,
+      beltName,
+      group[0],
+      group[1],
+      railStartX - 4 - groupIndex * 4,
+      railEndX,
+      y,
+    );
+    mixed.rails.forEach(({ material, rail }) => inputs.set(material, rail));
+  });
+  const output = addHorizontalRail(
+    drafts,
+    "output-belt",
+    planned.material,
+    beltName,
+    3,
+    railEndX,
+    6,
+  );
+  const undergroundName = beltName === "transport-belt" ? "underground-belt" :
+    beltName === "fast-transport-belt" ? "fast-underground-belt" : "express-underground-belt";
+  for (let machine = 0; machine < machineCount; machine += 1) {
+    const x = machine * pitch;
+    drafts.push({
+      role: "machine",
+      material: planned.material,
+      recipe: planned.recipe.id,
+      name: planned.recipe.machine.name,
+      position: tilePosition(x, 0),
+      direction: 0,
+      recipeSetting: planned.recipe.id,
+    });
+    const northSlots = [-1, 0, 1];
+    const southSlots = [-1, 0, 1];
+    groups.forEach((group, groupIndex) => {
+      const south = groupIndex === 1 || groupIndex === 3;
+      const long = groupIndex >= 2;
+      const material = group.length === 1
+        ? group[0].name
+        : `mix:${group.map((ingredient) => ingredient.name).sort().join("|")}`;
+      const armCount = armsFor(groupRate(group), machineCount,
+        long ? SAFE_LONG_ITEMS_PER_SECOND : SAFE_BULK_ITEMS_PER_SECOND);
+      for (let arm = 0; arm < armCount; arm += 1) {
+        const offset = (south ? southSlots : northSlots).shift()!;
+        drafts.push({
+          role: "input-inserter",
+          material,
+          recipe: planned.recipe.id,
+          name: long ? "long-handed-inserter" : "bulk-inserter",
+          position: tilePosition(x + offset, south ? 2 : -2),
+          direction: south ? 8 : 0,
+        });
+      }
+    });
+    drafts.push({ role: "output-inserter", material: planned.material, recipe: planned.recipe.id,
+      name: "bulk-inserter", position: tilePosition(x + 2, 0), direction: 12 });
+    for (let y = -1; y <= 1; y += 1) {
+      drafts.push({ role: "output-belt", material: planned.material, name: beltName,
+        position: tilePosition(x + 3, y), direction: 8 });
+    }
+    drafts.push({ role: "underground-belt", material: planned.material, name: undergroundName,
+      position: tilePosition(x + 3, 2), direction: 8, undergroundType: "input" });
+    drafts.push({ role: "underground-belt", material: planned.material, name: undergroundName,
+      position: tilePosition(x + 3, 5), direction: 8, undergroundType: "output" });
+    drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(x - 2, 0) });
+    drafts.push({ role: "power-pole", name: "medium-electric-pole", position: tilePosition(x + 2, 2) });
+  }
+  return rackFromDrafts(planned, drafts, inputs, output);
 }
 
 function buildFluidMachineRack(
@@ -853,7 +1026,378 @@ function buildGeneralDirectPairRack(
     material: consumer.material, type: "item", start: { x: 7, y: 0 }, end: { x: 7, y: 0 }, direction: 4,
     supplyPerSecond: consumer.outputPerSecond,
   }, false, additionalInputs);
-  return rackTerminalsDoNotConflict(rack) ? rack : undefined;
+  return rackTerminalsDoNotConflict(rack) && rackTerminalsArePhysicallyAccessible(rack)
+    ? rack
+    : undefined;
+}
+
+function appendInputRail(
+  inputs: Map<string, Rail>,
+  additionalInputs: Map<string, Rail[]>,
+  material: string,
+  rail: Rail,
+): void {
+  if (!inputs.has(material)) inputs.set(material, rail);
+  else additionalInputs.set(material, [...(additionalInputs.get(material) ?? []), rail]);
+}
+
+/**
+ * Builds a side-loaded two-material belt and returns the two independently
+ * routable input stubs. The shared trunk is labelled with an unordered lane
+ * pair; no recipe identity participates in the geometry.
+ */
+function addMixedMaterialTrunk(
+  drafts: Draft[],
+  beltName: string,
+  first: { name: string; perSecond: number },
+  second: { name: string; perSecond: number },
+  fromX: number,
+  toX: number,
+  y: number,
+): { mix: string; rails: Array<{ material: string; rail: Rail }> } {
+  const mix = `mix:${[first.name, second.name].sort().join("|")}`;
+  for (let x = fromX; x <= toX; x += 1) {
+    drafts.push({ role: "ingredient-feeder", material: mix, name: beltName,
+      position: tilePosition(x, y), direction: 4 });
+  }
+  for (const stubY of [y - 2, y - 1]) {
+    drafts.push({ role: "ingredient-feeder", material: first.name, name: beltName,
+      position: tilePosition(fromX, stubY), direction: 8 });
+  }
+  for (const stubY of [y + 3, y + 2, y + 1]) {
+    drafts.push({ role: "ingredient-feeder", material: second.name, name: beltName,
+      position: tilePosition(fromX, stubY), direction: 0 });
+  }
+  return {
+    mix,
+    rails: [
+      { material: first.name, rail: { material: first.name, type: "item",
+        start: { x: fromX, y: y - 2 }, end: { x: fromX, y: y - 1 }, direction: 8,
+        demandPerSecond: first.perSecond } },
+      { material: second.name, rail: { material: second.name, type: "item",
+        start: { x: fromX, y: y + 3 }, end: { x: fromX, y: y + 1 }, direction: 0,
+        demandPerSecond: second.perSecond } },
+    ],
+  };
+}
+
+/**
+ * Lowers a rate-derived producer/consumer ratio to repeated physical
+ * direct-insertion cells. For example, a 3:2 machine ratio becomes three
+ * producer machines facing two consumers, with a continuous max-flow deciding
+ * which inserters carry how much. The same code applies to any anonymous
+ * item-only recipes that fit the physical face and belt-lane constraints.
+ */
+function buildParametricDirectInsertionRack(
+  source: PlannedRecipe,
+  consumer: PlannedRecipe,
+  beltName: string,
+): MachineRack | undefined {
+  const pattern = deriveDirectInsertionPattern(source, consumer, SAFE_BULK_ITEMS_PER_SECOND);
+  if (!pattern || source.ingredientRates.some((ingredient) => ingredient.type !== "item") ||
+    consumer.ingredientRates.some((ingredient) => ingredient.type !== "item")) return undefined;
+  const residualOutputPerSecond = Math.max(0, source.outputPerSecond - pattern.directRatePerSecond);
+  // A producer used for direct insertion has no remaining output face in this
+  // topology. Residual flow therefore needs at least one separately belted
+  // producer machine; otherwise keep the edge in ordinary routed synthesis.
+  if (residualOutputPerSecond > 1e-9 && pattern.residualSourceMachineCount === 0) return undefined;
+  const sourceInputs = source.ingredientRates.filter((ingredient) => ingredient.type === "item");
+  const consumerInputs = consumer.ingredientRates
+    .filter((ingredient) => ingredient.type === "item" && ingredient.name !== source.material);
+  if (sourceInputs.length < 1 || sourceInputs.length > 2 ||
+    consumerInputs.length < 1 || consumerInputs.length > 2) return undefined;
+  const beltCapacity = Object.values(BELTS)
+    .find((candidate) => candidate.entityName === beltName)?.itemsPerSecond ?? 45;
+  const laneCapacity = beltCapacity / 2;
+  const maximumSourceCellFraction = Math.max(...pattern.cells.map((cell) =>
+    cell.transfers.reduce((sum, transfer) => sum + transfer.itemsPerSecond, 0) / source.outputPerSecond));
+  const maximumConsumerCellFraction = Math.max(...pattern.cells.map((cell) =>
+    cell.consumerOrdinals.length / consumer.machineCount));
+  if (sourceInputs.some((ingredient) => ingredient.perSecond * maximumSourceCellFraction > laneCapacity + 1e-9) ||
+    consumerInputs.some((ingredient) => ingredient.perSecond * maximumConsumerCellFraction > laneCapacity + 1e-9)) {
+    return undefined;
+  }
+  const sourceInputPerDirectMachine = sourceInputs.reduce((sum, ingredient) => sum +
+    ingredient.perSecond / source.outputPerSecond * source.machineCapacityPerSecond, 0);
+  const sourceInputArms = Math.max(1,
+    Math.ceil(sourceInputPerDirectMachine / SAFE_BULK_ITEMS_PER_SECOND - 1e-12));
+  const consumerInputArms = armsFor(
+    consumerInputs.reduce((sum, ingredient) => sum + ingredient.perSecond, 0),
+    consumer.machineCount,
+    SAFE_BULK_ITEMS_PER_SECOND,
+  );
+  const consumerOutputArms = armsFor(
+    consumer.outputPerSecond,
+    consumer.machineCount,
+    SAFE_BULK_ITEMS_PER_SECOND,
+  );
+  if (sourceInputArms > 3 || consumerInputArms > 3 || consumerOutputArms > 1) return undefined;
+
+  const drafts: Draft[] = [];
+  const inputs = new Map<string, Rail>();
+  const additionalInputs = new Map<string, Rail[]>();
+  const outputs: Rail[] = [];
+  // A two-material side-load occupies three approach tiles beyond its trunk.
+  // Derive the repeated-cell pitch from that physical envelope so adjacent
+  // anonymous cells never share a terminal or its mandatory escape tile.
+  const cellPitch = sourceInputs.length === 2 || consumerInputs.length === 2 ? 16 : 13;
+  const horizontalCells = pattern.cells.length > 1 && sourceInputs.length === 1 && consumerInputs.length === 1;
+  let horizontalCursor = 0;
+  const cellOffsets = pattern.cells.map((cell) => {
+    if (!horizontalCells) return 0;
+    const localMinimum = Math.min(...cell.sourceXs, ...cell.consumerXs) - 3;
+    const localMaximum = Math.max(...cell.sourceXs, ...cell.consumerXs) + 3;
+    const offset = horizontalCursor - localMinimum;
+    horizontalCursor += localMaximum - localMinimum + 4;
+    return offset;
+  });
+  for (const [cellIndex, cell] of pattern.cells.entries()) {
+    const baseY = horizontalCells ? 0 : cellIndex * cellPitch;
+    const xOffset = cellOffsets[cellIndex];
+    const sourceXs = cell.sourceXs.map((x) => x + xOffset);
+    const consumerXs = cell.consumerXs.map((x) => x + xOffset);
+    const minimumMachineX = Math.min(...sourceXs, ...consumerXs);
+    const maximumMachineX = Math.max(...sourceXs, ...consumerXs);
+    const trunkFromX = minimumMachineX - 3;
+    const trunkToX = maximumMachineX + 1;
+    const sourceCellFraction = cell.transfers.reduce((sum, transfer) =>
+      sum + transfer.itemsPerSecond, 0) / source.outputPerSecond;
+    const consumerCellFraction = cell.consumerOrdinals.length / consumer.machineCount;
+
+    let sourceInputMaterial = sourceInputs[0].name;
+    if (sourceInputs.length === 1) {
+      const rail = addHorizontalRail(drafts, "ingredient-feeder", sourceInputs[0].name,
+        beltName, trunkFromX, trunkToX, baseY - 3);
+      appendInputRail(inputs, additionalInputs, sourceInputs[0].name, {
+        ...rail,
+        demandPerSecond: sourceInputs[0].perSecond * sourceCellFraction,
+      });
+    } else {
+      const mixed = addMixedMaterialTrunk(
+        drafts,
+        beltName,
+        { name: sourceInputs[0].name, perSecond: sourceInputs[0].perSecond * sourceCellFraction },
+        { name: sourceInputs[1].name, perSecond: sourceInputs[1].perSecond * sourceCellFraction },
+        trunkFromX,
+        trunkToX,
+        baseY - 3,
+      );
+      sourceInputMaterial = mixed.mix;
+      mixed.rails.forEach(({ material, rail }) =>
+        appendInputRail(inputs, additionalInputs, material, rail));
+    }
+
+    let consumerInputMaterial = consumerInputs[0].name;
+    if (consumerInputs.length === 1) {
+      const rail = addHorizontalRail(drafts, "ingredient-feeder", consumerInputs[0].name,
+        beltName, trunkFromX, trunkToX, baseY + 7);
+      appendInputRail(inputs, additionalInputs, consumerInputs[0].name, {
+        ...rail,
+        demandPerSecond: consumerInputs[0].perSecond * consumerCellFraction,
+      });
+    } else {
+      const mixed = addMixedMaterialTrunk(
+        drafts,
+        beltName,
+        { name: consumerInputs[0].name, perSecond: consumerInputs[0].perSecond * consumerCellFraction },
+        { name: consumerInputs[1].name, perSecond: consumerInputs[1].perSecond * consumerCellFraction },
+        trunkFromX,
+        trunkToX,
+        baseY + 7,
+      );
+      consumerInputMaterial = mixed.mix;
+      mixed.rails.forEach(({ material, rail }) =>
+        appendInputRail(inputs, additionalInputs, material, rail));
+    }
+
+    sourceXs.forEach((x, index) => {
+      const ordinal = cell.sourceOrdinals[index];
+      drafts.push({ role: "machine", material: source.material, recipe: source.recipe.id,
+        name: source.recipe.machine.name, position: tilePosition(x, baseY), direction: 0,
+        recipeSetting: source.recipe.id });
+      for (let arm = 0; arm < sourceInputArms; arm += 1) {
+        drafts.push({ role: "input-inserter", material: sourceInputMaterial, recipe: source.recipe.id,
+          name: "bulk-inserter", position: tilePosition(x + [-1, 0, 1][arm], baseY - 2), direction: 0 });
+      }
+      if (ordinal === undefined) throw new Error("Direct-insertion source ordinal was not allocated.");
+    });
+    consumerXs.forEach((x, index) => {
+      const ordinal = cell.consumerOrdinals[index];
+      drafts.push({ role: "machine", material: consumer.material, recipe: consumer.recipe.id,
+        name: consumer.recipe.machine.name, position: tilePosition(x, baseY + 4), direction: 0,
+        recipeSetting: consumer.recipe.id });
+      for (let arm = 0; arm < consumerInputArms; arm += 1) {
+        drafts.push({ role: "input-inserter", material: consumerInputMaterial, recipe: consumer.recipe.id,
+          name: "bulk-inserter", position: tilePosition(x + [-1, 0, 1][arm], baseY + 6), direction: 8 });
+      }
+      const left = consumerXs.length > 1 && index === 0;
+      const outputX = x + (left ? -3 : 3);
+      drafts.push({ role: "output-inserter", material: consumer.material, recipe: consumer.recipe.id,
+        name: "bulk-inserter", position: tilePosition(x + (left ? -2 : 2), baseY + 4),
+        direction: left ? 4 : 12 });
+      drafts.push({ role: "output-belt", material: consumer.material, name: beltName,
+        position: tilePosition(outputX, baseY + 4), direction: left ? 12 : 4 });
+      outputs.push({ material: consumer.material, type: "item",
+        start: { x: outputX, y: baseY + 4 }, end: { x: outputX, y: baseY + 4 },
+        direction: left ? 12 : 4,
+        supplyPerSecond: consumer.outputPerSecond / consumer.machineCount });
+      if (ordinal === undefined) throw new Error("Direct-insertion consumer ordinal was not allocated.");
+    });
+    cell.transfers.forEach((transfer) => {
+      const sourceX = transfer.sourceX + xOffset;
+      const consumerX = transfer.consumerX + xOffset;
+      const overlapMinimum = Math.max(sourceX - 1, consumerX - 1);
+      const overlapMaximum = Math.min(sourceX + 1, consumerX + 1);
+      const inserterX = Math.max(overlapMinimum, Math.min(overlapMaximum,
+        Math.round((sourceX + consumerX) / 2)));
+      drafts.push({ role: "output-inserter", material: source.material, recipe: source.recipe.id,
+        name: "bulk-inserter", position: tilePosition(inserterX, baseY + 2), direction: 0,
+        directTransfer: true });
+    });
+    for (const poleX of [minimumMachineX - 2, maximumMachineX + 2]) {
+      drafts.push({ role: "power-pole", name: "medium-electric-pole",
+        position: tilePosition(poleX, baseY + 2) });
+    }
+  }
+  const currentInputRails = (material: string): Rail[] => [
+    inputs.get(material),
+    ...(additionalInputs.get(material) ?? []),
+  ].filter((rail): rail is Rail => rail !== undefined);
+  if (horizontalCells) {
+    const coalesce = (material: string, y: number): void => {
+      const rails = currentInputRails(material)
+        .filter((rail) => rail.direction === 4 && rail.start.y === y && rail.end.y === y);
+      if (rails.length < 2) return;
+      const fromX = Math.min(...rails.map((rail) => rail.start.x));
+      const toX = Math.max(...rails.map((rail) => rail.end.x));
+      const existing = new Set(drafts.filter((draft) => draft.material === material && draft.name === beltName)
+        .map((draft) => {
+          const point = floorPosition(draft.position);
+          return `${point.x},${point.y}`;
+        }));
+      for (let x = fromX; x <= toX; x += 1) {
+        if (existing.has(`${x},${y}`)) continue;
+        drafts.push({ role: "ingredient-feeder", material, name: beltName,
+          position: tilePosition(x, y), direction: 4 });
+      }
+      inputs.set(material, {
+        material,
+        type: "item",
+        start: { x: fromX, y },
+        end: { x: toX, y },
+        direction: 4,
+        demandPerSecond: rails.reduce((sum, rail) => sum + (rail.demandPerSecond ?? 0), 0),
+      });
+      additionalInputs.delete(material);
+    };
+    coalesce(sourceInputs[0].name, -3);
+    coalesce(consumerInputs[0].name, 7);
+  }
+  if (outputs.length > 2 && consumer.outputPerSecond <= laneCapacity + 1e-9) {
+    const baseline = drafts.length;
+    const occupied = drafts.flatMap(occupiedDraftTiles);
+    const maximumX = Math.max(...occupied.map((tile) => tile.x));
+    const maximumY = Math.max(...occupied.map((tile) => tile.y));
+    const minimumY = Math.min(...occupied.map((tile) => tile.y));
+    const centerY = Math.round((minimumY + maximumY) / 2);
+    const localReserved = new Set<string>();
+    const localOwners = new Map<string, Set<string>>();
+    for (const [material] of inputs) for (const rail of currentInputRails(material)) {
+      const vector = directionVector(rail.direction);
+      for (const point of [
+        { x: rail.start.x - vector.x, y: rail.start.y - vector.y },
+        { x: rail.end.x + vector.x, y: rail.end.y + vector.y },
+      ]) {
+        const key = `${point.x},${point.y}`;
+        localReserved.add(key);
+        localOwners.set(key, new Set([material]));
+      }
+    }
+    let mergedOutput: Rail | undefined;
+    for (const point of [
+      { x: maximumX + 10, y: centerY },
+      { x: maximumX + 16, y: centerY },
+      { x: maximumX + 10, y: maximumY + 8 },
+    ]) {
+      drafts.length = baseline;
+      const target: Rail = {
+        material: consumer.material,
+        type: "item",
+        start: point,
+        end: point,
+        direction: 4,
+        supplyPerSecond: consumer.outputPerSecond,
+      };
+      drafts.push({ role: "output-belt", material: consumer.material, name: beltName,
+        position: tilePosition(point.x, point.y), direction: 4 });
+      if (!routeItemMerge(drafts, consumer.material, beltName,
+        outputs.map((rail) => ({ point: rail.end, direction: rail.direction })),
+        target, localReserved, localOwners)) continue;
+      mergedOutput = target;
+      break;
+    }
+    if (!mergedOutput) {
+      drafts.length = baseline;
+      // The global network router can still merge several exact-rate producer
+      // ports. Keep that legal topology in the portfolio instead of rejecting
+      // the entire direct-insertion neighborhood merely because the optional
+      // local collector could not fit beside it.
+    } else {
+      outputs.splice(0, outputs.length, mergedOutput);
+    }
+  }
+  if (pattern.residualSourceMachineCount > 0 && residualOutputPerSecond > 1e-9) {
+    const fraction = residualOutputPerSecond / source.outputPerSecond;
+    const residualPlan: PlannedRecipe = {
+      ...source,
+      machineCount: pattern.residualSourceMachineCount,
+      outputPerSecond: residualOutputPerSecond,
+      designedOutputPerSecond: residualOutputPerSecond,
+      craftsPerSecond: source.craftsPerSecond * fraction,
+      ingredientRates: source.ingredientRates.map((ingredient) => ({
+        ...ingredient,
+        perSecond: ingredient.perSecond * fraction,
+      })),
+    };
+    const residual = buildSingleMachineRack(residualPlan, beltName, new Set(), false);
+    if (!residual) return undefined;
+    const offsetY = (horizontalCells ? 13 : pattern.cells.length * cellPitch + 3) - residual.minimumY;
+    const placement: RackPlacement = { rack: residual, x: 0, y: offsetY };
+    drafts.push(...residual.drafts.map((draft) => ({
+      ...draft,
+      position: { x: draft.position.x, y: draft.position.y + offsetY },
+    })));
+    for (const [material] of residual.inputs) {
+      rackInputRails(residual, material).forEach((rail) => appendInputRail(
+        inputs,
+        additionalInputs,
+        material,
+        {
+          ...translatedRail(rail, placement),
+          demandPerSecond: rail.demandPerSecond ?? residualPlan.ingredientRates
+            .find((ingredient) => ingredient.name === material)?.perSecond,
+        },
+      ));
+    }
+    outputs.push(...rackOutputRails(residual).map((rail) => ({
+      ...translatedRail(rail, placement),
+      supplyPerSecond: rail.supplyPerSecond ?? residualOutputPerSecond /
+        Math.max(1, rackOutputRails(residual).length),
+    })));
+  }
+  const rack = rackFromDrafts(
+    consumer,
+    drafts,
+    inputs,
+    outputs[0],
+    true,
+    additionalInputs,
+    outputs.slice(1),
+    pattern.cells.reduce((sum, cell) => sum + cell.transfers.length, 0),
+  );
+  return rackTerminalsDoNotConflict(rack) && rackTerminalsArePhysicallyAccessible(rack)
+    ? rack
+    : undefined;
 }
 
 /**
@@ -883,11 +1427,15 @@ function buildSingleMachineRack(
     if (radial) return radial;
   }
   if (items.length > 4) return undefined;
-  // Mixed lanes are deliberately limited to boundary-fed recipes. When both
-  // lane materials are produced inside the same graph, independent fan-out
-  // routes can fill one lane while starving the other at a downstream pickup;
-  // a geometrically connected belt is not then a live-throughput guarantee.
-  const mixed = items.every((ingredient) => terminalMaterials.has(ingredient.name))
+  const lanePacked = compactInternalTopologies
+    ? buildLanePackedMachineRack(planned, items, beltName)
+    : undefined;
+  if (lanePacked) return lanePacked;
+  // Lane packing is a topology candidate for every rate-compatible two-item
+  // neighborhood. Individual material stubs remain explicit global terminals,
+  // so either boundary or recursively produced inputs can side-load the two
+  // lanes; the ordinary two-belt rack remains in the topology portfolio.
+  const mixed = (compactInternalTopologies || items.every((ingredient) => terminalMaterials.has(ingredient.name)))
     ? buildMixedLaneMachineRack(planned, items, beltName)
     : undefined;
   if (mixed) return mixed;
@@ -1005,6 +1553,7 @@ function buildMachineRack(
   beltName: string,
   terminalMaterials: ReadonlySet<string>,
   compactInternalTopologies: boolean,
+  fullBeltMaterials: ReadonlySet<string>,
 ): MachineRack | undefined {
   const beltCapacity = Object.values(BELTS)
     .find((candidate) => candidate.entityName === beltName)?.itemsPerSecond ?? 45;
@@ -1017,12 +1566,23 @@ function buildMachineRack(
   // contract that remains valid before those networks are chosen.
   const inputChannels = Math.max(1, ...planned.ingredientRates
     .filter((ingredient) => ingredient.type === "item")
-    .map((ingredient) => Math.ceil(ingredient.perSecond / laneCapacity - 1e-12)));
+    .map((ingredient) => Math.ceil(ingredient.perSecond /
+      (fullBeltMaterials.has(ingredient.name) ? beltCapacity : laneCapacity) - 1e-12)));
   const outputChannels = planned.materialType === "item"
     ? Math.max(1, Math.ceil(planned.outputPerSecond / laneCapacity - 1e-12))
     : 1;
   const channelCount = Math.max(inputChannels, outputChannels);
-  if (channelCount === 1 || planned.machineCount === 1 ||
+  // The compact portfolio also folds a long anonymous machine sequence into
+  // several rate-proportional rows. This is a geometric choice derived from
+  // machine count; the same row compiler, terminals, and global validators
+  // apply to every recipe.
+  const compactRowCount = compactInternalTopologies && planned.machineCount >= 12 &&
+    planned.ingredientRates.every((ingredient) => ingredient.type === "item") &&
+    planned.materialType === "item"
+    ? Math.ceil(Math.sqrt(planned.machineCount / 2))
+    : 1;
+  const requestedShardCount = Math.max(channelCount, compactRowCount);
+  if (requestedShardCount === 1 || planned.machineCount === 1 ||
     planned.ingredientRates.some((ingredient) => ingredient.type === "fluid") ||
     planned.materialType === "fluid") {
     return buildSingleMachineRack(planned, beltName, terminalMaterials, compactInternalTopologies);
@@ -1039,7 +1599,7 @@ function buildMachineRack(
     ? outputChannels * Math.ceil(laneCapacity / outputPerMachine - 1e-12)
     : planned.machineCount;
   const physicalMachineCount = Math.max(planned.machineCount, laneSaturatingMachineCount);
-  const actualChannels = Math.min(channelCount, physicalMachineCount);
+  const actualChannels = Math.min(requestedShardCount, physicalMachineCount);
   const base = Math.floor(physicalMachineCount / actualChannels);
   const remainder = physicalMachineCount % actualChannels;
   const shards: MachineRack[] = [];
@@ -1057,10 +1617,9 @@ function buildMachineRack(
         perSecond: ingredient.perSecond * fraction,
       })),
     };
-    // Parallel rows need directional bundle ports. Compact point/radial
-    // feeders are excellent for one row but force long detours when several
-    // rows share a full-belt channel, so derive the shard seam from the plain
-    // face rack and let the rate coalescer build the common manifolds.
+    // Keep the conventional sharded family as an independent portfolio
+    // member. The compact family opts into lane packing below, and the routed
+    // global objective compares them rather than forcing either topology.
     const shard = buildSingleMachineRack(shardPlan, beltName, new Set(), compactInternalTopologies);
     if (!shard) return undefined;
     // Alternate which physical side feeds each output belt. Splitters preserve
@@ -1108,145 +1667,12 @@ function buildMachineRack(
     // Keep the first port selection stable and spatial, never name-based.
     if (index === 0) outputs[0] = output;
   }
-  const inputMaterials = [...inputs.keys()];
-  const baseRackLeftEdge = Math.min(...drafts.flatMap(occupiedDraftTiles).map((tile) => tile.x));
-  const localReserved = new Set<string>();
-  const localReservedOwners = new Map<string, Set<string>>();
-  const reserveLocal = (tile: Tile, material: string): void => {
-    const key = `${tile.x},${tile.y}`;
-    localReserved.add(key);
-    const owners = localReservedOwners.get(key) ?? new Set<string>();
-    owners.add(material);
-    localReservedOwners.set(key, owners);
-  };
-  for (const material of inputMaterials) {
-    for (const rail of [inputs.get(material)!, ...(additionalInputs.get(material) ?? [])]) {
-      const vector = directionVector(rail.direction);
-      reserveLocal({ x: rail.start.x - vector.x, y: rail.start.y - vector.y }, material);
-      reserveLocal({ x: rail.end.x + vector.x, y: rail.end.y + vector.y }, material);
-    }
-  }
-  for (const rail of outputs) {
-    const vector = directionVector(rail.direction);
-    reserveLocal({ x: rail.end.x + vector.x, y: rail.end.y + vector.y }, rail.material);
-  }
-  for (const [materialIndex, material] of inputMaterials.entries()) {
-    const rails = [inputs.get(material)!, ...(additionalInputs.get(material) ?? [])]
-      .sort((left, right) => left.start.y - right.start.y);
-    const totalDemand = rails.reduce((sum, rail) => sum + (rail.demandPerSecond ?? 0), 0);
-    const minimumInputChannels = Math.max(1, Math.ceil(totalDemand / laneCapacity - 1e-12));
-    if (rails.length <= minimumInputChannels) continue;
-    const groups = Array.from({ length: minimumInputChannels }, (_, groupIndex) => {
-      const from = Math.floor(groupIndex * rails.length / minimumInputChannels);
-      const to = Math.floor((groupIndex + 1) * rails.length / minimumInputChannels);
-      return rails.slice(from, Math.max(from + 1, to));
-    });
-    const exposed: Rail[] = [];
-    for (const group of groups) {
-      if (group.length === 1) {
-        exposed.push(group[0]);
-        continue;
-      }
-      const centerY = Math.round(group.reduce((sum, rail) => sum + rail.start.y, 0) / group.length);
-      const baseline = drafts.length;
-      let inlet: Rail | undefined;
-      for (const yOffset of [0, -4, 4, -8, 8, -12, 12]) {
-        drafts.length = baseline;
-        const point = {
-          x: baseRackLeftEdge - 14 - (group.length - 1) * 3 - materialIndex * 4,
-          y: centerY + yOffset,
-        };
-        const candidate: Rail = {
-          material,
-          type: "item",
-          start: point,
-          end: point,
-          direction: 4,
-          demandPerSecond: group.reduce((sum, rail) => sum + (rail.demandPerSecond ?? 0), 0),
-        };
-        drafts.push({ role: "ingredient-feeder", material, name: beltName,
-          position: tilePosition(point.x, point.y), direction: 4 });
-        if (!routeItemFanout(drafts, material, beltName,
-          { point, direction: 4 }, group, localReserved, localReservedOwners)) continue;
-        inlet = candidate;
-        break;
-      }
-      if (!inlet) {
-        drafts.length = baseline;
-        return undefined;
-      }
-      exposed.push(inlet);
-      const inletVector = directionVector(inlet.direction);
-      reserveLocal({ x: inlet.start.x - inletVector.x, y: inlet.start.y - inletVector.y }, material);
-      reserveLocal({ x: inlet.end.x + inletVector.x, y: inlet.end.y + inletVector.y }, material);
-    }
-    inputs.set(material, exposed[0]);
-    if (exposed.length > 1) additionalInputs.set(material, exposed.slice(1));
-    else additionalInputs.delete(material);
-  }
-  const minimumOutputChannels = planned.materialType === "item"
-    ? Math.max(1, Math.ceil(planned.outputPerSecond / laneCapacity - 1e-12))
-    : outputs.length;
-  if (outputs.length > minimumOutputChannels) {
-    // Preserve the one-lane physical contract across rack seams. Coalesce only
-    // surplus shards beyond the rate-derived lane count; pretending that two
-    // one-sided manifolds form a freely shared full belt strands capacity when
-    // their downstream demand ratios differ.
-    const orderedOutputs = [...outputs].sort((left, right) => left.end.y - right.end.y);
-    const rightEdge = Math.max(...drafts.flatMap(occupiedDraftTiles).map((tile) => tile.x));
-    const groups = Array.from({ length: minimumOutputChannels }, (_, groupIndex) => {
-      const from = Math.floor(groupIndex * orderedOutputs.length / minimumOutputChannels);
-      const to = Math.floor((groupIndex + 1) * orderedOutputs.length / minimumOutputChannels);
-      return orderedOutputs.slice(from, Math.max(from + 1, to));
-    });
-    const mergedOutputs: Rail[] = [];
-    for (const [groupIndex, group] of groups.entries()) {
-      if (group.length === 1) {
-        mergedOutputs.push(group[0]);
-        continue;
-      }
-      const centerY = Math.round(group.reduce((sum, rail) => sum + rail.end.y, 0) / group.length);
-      const baseline = drafts.length;
-      let merged: Rail | undefined;
-      for (const yOffset of [0, -4, 4, -8, 8, -12, 12]) {
-        drafts.length = baseline;
-        const point = {
-          x: rightEdge + 14 + (group.length - 1) * 3 + groupIndex * 2,
-          y: centerY + yOffset,
-        };
-        const supplyPerSecond = group.reduce((sum, rail) => sum + (rail.supplyPerSecond ?? 0), 0);
-        const target: Rail = {
-          material: planned.material,
-          type: "item",
-          start: point,
-          end: point,
-          direction: 4,
-          supplyPerSecond,
-        };
-        drafts.push({ role: "output-belt", material: planned.material, name: beltName,
-          position: tilePosition(point.x, point.y), direction: 4 });
-        if (!routeItemMerge(drafts, planned.material, beltName,
-          group.map((rail) => ({ point: rail.end, direction: rail.direction })),
-          target, new Set(), new Map())) continue;
-        merged = target;
-        break;
-      }
-      if (!merged) {
-        drafts.length = baseline;
-        return undefined;
-      }
-      mergedOutputs.push(merged);
-    }
-    return rackFromDrafts(
-      planned,
-      drafts,
-      inputs,
-      mergedOutputs[0],
-      true,
-      additionalInputs,
-      mergedOutputs.slice(1),
-    );
-  }
+  // Shards are machine neighborhoods, not independently routed blocks. Expose
+  // every rail to the factory-wide network solver so fan-out, merging, mixed
+  // lanes, and routing order are optimized together with all other recipes.
+  // Pre-routing a private splitter tree here can seal a later material's port
+  // and recreates the block-boundary inefficiency this compiler is designed
+  // to eliminate.
   return rackFromDrafts(
     planned,
     drafts,
@@ -1256,6 +1682,7 @@ function buildMachineRack(
     additionalInputs,
     outputs.slice(1),
   );
+
 }
 
 function rotateTileClockwise(tile: Tile): Tile {
@@ -1470,9 +1897,11 @@ function materialConnections(
   racks: MachineRack[],
   plan: ChainPlan,
 ): Array<{ producer?: string; consumer: string; material: string; rate: number }> {
-  const producers = new Set(racks.map((rack) => rack.planned.material));
+  const producerOwners = new Map<string, string>();
+  racks.forEach((rack) => rackOutputRails(rack).forEach((rail) =>
+    producerOwners.set(rail.material, rack.planned.material)));
   return racks.flatMap((consumer) => [...consumer.inputs].map(([material]) => ({
-    producer: producers.has(material) ? material : undefined,
+    producer: producerOwners.get(material),
     consumer: consumer.planned.material,
     material,
     rate: plan.materialRates[material] ?? 0,
@@ -1491,7 +1920,8 @@ function placementObjective(
     const producer = state.placements.get(edge.producer);
     const consumer = state.placements.get(edge.consumer);
     if (!producer || !consumer) continue;
-    const outputs = rackOutputRails(producer.rack).map((rail) => translatedRail(rail, producer));
+    const outputs = rackOutputRails(producer.rack, edge.material)
+      .map((rail) => translatedRail(rail, producer));
     const inputs = rackInputRails(consumer.rack, edge.material)
       .map((rail) => translatedRail(rail, consumer));
     if (inputs.length === 0) continue;
@@ -1572,11 +2002,11 @@ function candidateTranslations(state: PlacementState, rack: MachineRack,
       }
     }
     const localRails = producesForPlaced
-      ? rackOutputRails(rack)
+      ? rackOutputRails(rack, edge.material)
       : rackInputRails(rack, edge.material);
     const relatedRails = producesForPlaced
       ? rackInputRails(related.rack, edge.material).map((rail) => translatedRail(rail, related))
-      : rackOutputRails(related.rack).map((rail) => translatedRail(rail, related));
+      : rackOutputRails(related.rack, edge.material).map((rail) => translatedRail(rail, related));
     for (const localChannel of localRails) {
       for (const relatedChannel of relatedRails) {
         const localTerminal = producesForPlaced ? localChannel.end : localChannel.start;
@@ -1710,6 +2140,165 @@ function searchPlacements(
       `${states.length} floorplan candidates retained`);
   }
   return states;
+}
+
+interface LargeNeighborhoodResult {
+  states: PlacementState[];
+  iterations: number;
+}
+
+function rebuildPlacementState(
+  placements: Iterable<[string, RackPlacement]>,
+  connections: ReturnType<typeof materialConnections>,
+): PlacementState | undefined {
+  const entries = [...placements];
+  if (entries.length === 0) return undefined;
+  const [firstMaterial, firstPlacement] = entries[0];
+  let state: PlacementState = {
+    placements: new Map([[firstMaterial, firstPlacement]]),
+    occupied: new Set(rackPlacementTiles(firstPlacement.rack).map((tile) =>
+      `${tile.x + firstPlacement.x},${tile.y + firstPlacement.y}`)),
+    minimumX: firstPlacement.rack.minimumX + firstPlacement.x,
+    maximumX: firstPlacement.rack.maximumX + firstPlacement.x,
+    minimumY: firstPlacement.rack.minimumY + firstPlacement.y,
+    maximumY: firstPlacement.rack.maximumY + firstPlacement.y,
+    score: 0,
+  };
+  for (const [, placement] of entries.slice(1)) {
+    if (placementCollides(state, placement.rack, placement.x, placement.y)) return undefined;
+    state = addPlacement(state, placement.rack, placement.x, placement.y, connections);
+  }
+  state.score = placementObjective(state, connections);
+  return state;
+}
+
+function placementWireLength(
+  state: PlacementState,
+  edge: ReturnType<typeof materialConnections>[number],
+): number {
+  if (!edge.producer) return 0;
+  const producer = state.placements.get(edge.producer);
+  const consumer = state.placements.get(edge.consumer);
+  if (!producer || !consumer) return 0;
+  const outputs = rackOutputRails(producer.rack, edge.material)
+    .map((rail) => translatedRail(rail, producer));
+  const inputs = rackInputRails(consumer.rack, edge.material).map((rail) => translatedRail(rail, consumer));
+  if (outputs.length === 0 || inputs.length === 0) return 0;
+  return Math.min(...outputs.flatMap((output) => inputs.map((input) =>
+    Math.abs(output.end.x - input.start.x) + Math.abs(output.end.y - input.start.y))));
+}
+
+/**
+ * Deterministic large-neighborhood search. It removes the endpoints of the
+ * most expensive anonymous graph edges (plus compact one-node envelope
+ * neighborhoods), then jointly reinserts them with alternate orientations and
+ * topology variants. Accepted states must improve the same global objective;
+ * detailed routing and validators still decide whether they survive.
+ */
+function improvePlacementsWithLargeNeighborhoodSearch(
+  initialStates: PlacementState[],
+  racks: MachineRack[],
+  plan: ChainPlan,
+  topologyVariants: ReadonlyMap<string, MachineRack[]>,
+  maximumIterations: number,
+  reportSearch?: (detail: string) => void,
+): LargeNeighborhoodResult {
+  if (racks.length < 2 || maximumIterations <= 0) return { states: [], iterations: 0 };
+  const connections = materialConnections(racks, plan);
+  const baseByMaterial = new Map(racks.map((rack) => [rack.planned.material, rack]));
+  const recipeOrdinal = new Map(plan.recipes.map((planned, index) => [planned.material, index]));
+  const improved: PlacementState[] = [];
+  let iterations = 0;
+  for (const seed of [...initialStates].sort((left, right) => left.score - right.score).slice(0, 6)) {
+    const expensiveEdges = connections.filter((edge) => edge.producer)
+      .sort((left, right) => placementWireLength(seed, right) * Math.sqrt(Math.max(0.25, right.rate)) -
+        placementWireLength(seed, left) * Math.sqrt(Math.max(0.25, left.rate)));
+    const neighborhoods = new Map<string, string[]>();
+    const addNeighborhood = (materials: string[]): void => {
+      const unique = [...new Set(materials)].filter((material) => seed.placements.has(material))
+        .sort((left, right) => (recipeOrdinal.get(left) ?? 0) - (recipeOrdinal.get(right) ?? 0));
+      if (unique.length === 0 || unique.length >= seed.placements.size) return;
+      neighborhoods.set(unique.join("|"), unique);
+    };
+    expensiveEdges.slice(0, 8).forEach((edge) => {
+      addNeighborhood([edge.producer!, edge.consumer]);
+      const adjacent = connections.find((candidate) => candidate !== edge &&
+        (candidate.producer === edge.consumer || candidate.consumer === edge.producer));
+      if (adjacent) addNeighborhood([edge.producer!, edge.consumer,
+        adjacent.producer ?? adjacent.consumer]);
+    });
+    const envelopeOrder = [...seed.placements].sort(([, left], [, right]) => {
+      const distance = (placement: RackPlacement): number => Math.max(
+        Math.abs((placement.rack.minimumX + placement.rack.maximumX) / 2 + placement.x),
+        Math.abs((placement.rack.minimumY + placement.rack.maximumY) / 2 + placement.y),
+      );
+      return distance(right) - distance(left);
+    });
+    envelopeOrder.slice(0, 4).forEach(([material]) => addNeighborhood([material]));
+
+    for (const neighborhood of neighborhoods.values()) {
+      if (iterations >= maximumIterations) break;
+      iterations += 1;
+      const removed = new Map(neighborhood.map((material) => [material, seed.placements.get(material)!]));
+      const retained = [...seed.placements].filter(([material]) => !removed.has(material));
+      const base = rebuildPlacementState(retained, connections);
+      if (!base) continue;
+      const order = [...neighborhood].sort((left, right) => {
+        const linksToRetained = (material: string): number => connections.filter((edge) =>
+          (edge.producer === material && base.placements.has(edge.consumer)) ||
+          (edge.consumer === material && edge.producer && base.placements.has(edge.producer)))
+          .reduce((sum, edge) => sum + edge.rate, 0);
+        return linksToRetained(right) - linksToRetained(left) ||
+          (recipeOrdinal.get(left) ?? 0) - (recipeOrdinal.get(right) ?? 0);
+      });
+      let frontier = [base];
+      for (const material of order) {
+        const original = removed.get(material)!;
+        const baseRack = baseByMaterial.get(material) ?? original.rack;
+        const topology = topologyVariants.get(material) ?? [baseRack];
+        const rackCandidates = topology.flatMap((rack) => {
+          if (!rack.rotatable) return [rack];
+          const mirrored = mirrorRackHorizontally(rack);
+          return [rack, rotateRackClockwise(rack), mirrored, rotateRackClockwise(mirrored)];
+        });
+        const signatures = new Set<string>();
+        const uniqueRacks = rackCandidates.filter((rack) => {
+          const signature = rackTopologySignature(rack);
+          if (signatures.has(signature)) return false;
+          signatures.add(signature);
+          return true;
+        });
+        const expanded: PlacementState[] = [];
+        for (const state of frontier) for (const rack of uniqueRacks) {
+          const positions = new Map<string, Tile>();
+          const add = (point: Tile): void => {
+            positions.set(`${point.x},${point.y}`, point);
+          };
+          candidateTranslations(state, rack, connections).forEach(add);
+          for (const dx of [-8, -4, -2, 0, 2, 4, 8]) {
+            for (const dy of [-8, -4, -2, 0, 2, 4, 8]) {
+              add({ x: original.x + dx, y: original.y + dy });
+            }
+          }
+          expanded.push(...[...positions.values()]
+            .filter((point) => !placementCollides(state, rack, point.x, point.y))
+            .map((point) => addPlacement(state, rack, point.x, point.y, connections))
+            .sort((left, right) => left.score - right.score)
+            .slice(0, 16));
+        }
+        frontier = expanded.sort((left, right) => left.score - right.score).slice(0, 24);
+        if (frontier.length === 0) break;
+      }
+      const winner = frontier[0];
+      if (winner && winner.placements.size === seed.placements.size && winner.score < seed.score - 1e-9) {
+        improved.push(winner);
+      }
+    }
+    if (iterations >= maximumIterations) break;
+  }
+  reportSearch?.(`Large-neighborhood refinement evaluated ${iterations} anonymous placement neighborhoods; ` +
+    `${improved.length} improved floorplans retained`);
+  return { states: improved, iterations };
 }
 
 function seededPlacement(
@@ -1894,6 +2483,7 @@ function existingTunnelTiles(drafts: Draft[]): Set<string> {
 interface SearchNode extends Tile {
   heading: CardinalDirection;
   arrivedUnderground: boolean;
+  undergroundName?: string;
   cost: number;
   estimate: number;
   key: string;
@@ -1902,9 +2492,11 @@ interface SearchNode extends Tile {
 interface RoutedPoint extends Tile {
   arrivedUnderground: boolean;
   heading: CardinalDirection;
+  undergroundName?: string;
 }
 
 let lastRoutingDiagnostic = "none";
+let activeBraidableMaterials: ReadonlySet<string> = new Set();
 
 function routeBetween(
   drafts: Draft[],
@@ -1926,6 +2518,30 @@ function routeBetween(
   const goal = { x: targetStart.x - finalVector.x, y: targetStart.y - finalVector.y };
   const physicalOccupancy = new Set<string>();
   drafts.flatMap(occupiedDraftTiles).forEach((tile) => physicalOccupancy.add(`${tile.x},${tile.y}`));
+  const reusableBeltAt = (point: Tile, direction: CardinalDirection): boolean => drafts.some((draft) =>
+    draft.direction === direction && draft.undergroundType === undefined &&
+    draft.name.includes("belt") && !draft.name.includes("splitter") &&
+    beltMaterialCompatible(material, draft.material) && occupiedDraftTiles(draft)
+      .some((tile) => tile.x === point.x && tile.y === point.y));
+  // Same-material material trees are reusable resources, not obstacles. A
+  // branch may splice into a correctly directed surface belt at either end;
+  // the existing entity is retained when the new path is emitted.
+  // A splitter or belt can side-load onto an existing same-material surface
+  // belt. When that happens, the first routed tile must follow the existing
+  // belt's heading rather than the source's approach heading. This matters for
+  // dense many-to-one collectors, where an earlier branch may legitimately
+  // occupy a later splitter's escape tile with a perpendicular continuation.
+  const reusableStartDraft = drafts.find((draft) =>
+    draft.direction !== undefined && draft.undergroundType === undefined &&
+    draft.name.includes("belt") && !draft.name.includes("splitter") &&
+    beltMaterialCompatible(material, draft.material) &&
+    draft.direction !== ((sourceDirection + 8) % 16) && occupiedDraftTiles(draft)
+      .some((tile) => tile.x === start.x && tile.y === start.y));
+  const reusableStart = reusableStartDraft !== undefined;
+  const startHeading = reusableStartDraft?.direction ?? sourceDirection;
+  const reusableGoal = reusableBeltAt(goal, finalDirection);
+  if (reusableStart) physicalOccupancy.delete(`${start.x},${start.y}`);
+  if (reusableGoal) physicalOccupancy.delete(`${goal.x},${goal.y}`);
   const incompatibleIngress = new Set<string>();
   for (const draft of drafts) {
     if (draft.direction === undefined || draft.undergroundType === "input" ||
@@ -1936,6 +2552,10 @@ function routeBetween(
       incompatibleIngress.add(`${tile.x + vector.x},${tile.y + vector.y}`);
     }
   }
+  // Negotiated networks may have already connected this terminal while
+  // routing an earlier consumer of the same material. Reusing that directed
+  // path is both valid and smaller than forcing a parallel duplicate route.
+  if (directedBeltPathExists(drafts, material, sourceEnd, targetStart)) return true;
   if (physicalOccupancy.has(`${start.x},${start.y}`) || physicalOccupancy.has(`${goal.x},${goal.y}`) ||
     reservedTiles.has(`${start.x},${start.y}`) || reservedTiles.has(`${goal.x},${goal.y}`) ||
     incompatibleIngress.has(`${start.x},${start.y}`) || incompatibleIngress.has(`${goal.x},${goal.y}`)) {
@@ -1974,8 +2594,8 @@ function routeBetween(
   const undergroundName = beltName === "transport-belt" ? "underground-belt" :
     beltName === "fast-transport-belt" ? "fast-underground-belt" : "express-underground-belt";
   const tunnelTiles = existingTunnelTiles(drafts);
-  const keyFor = (x: number, y: number, heading: CardinalDirection, arrived: boolean): string =>
-    `${x},${y},${heading},${arrived ? 1 : 0}`;
+  const keyFor = (x: number, y: number, heading: CardinalDirection, arrived: boolean,
+    tunnelName = ""): string => `${x},${y},${heading},${arrived ? 1 : 0},${tunnelName}`;
   const heuristic = (x: number, y: number): number => Math.abs(x - goal.x) + Math.abs(y - goal.y);
   const queue: SearchNode[] = [];
   const push = (node: SearchNode): void => {
@@ -2008,15 +2628,15 @@ function routeBetween(
     }
     return first;
   };
-  const startKey = keyFor(start.x, start.y, sourceDirection, false);
+  const startKey = keyFor(start.x, start.y, startHeading, false);
   const best = new Map([[startKey, 0]]);
   const previous = new Map<string, string>();
   const pointsByKey = new Map<string, RoutedPoint>([[startKey, {
     ...start,
-    heading: sourceDirection,
+    heading: startHeading,
     arrivedUnderground: false,
   }]]);
-  push({ ...start, heading: sourceDirection, arrivedUnderground: false,
+  push({ ...start, heading: startHeading, arrivedUnderground: false,
     cost: 0, estimate: heuristic(start.x, start.y), key: startKey });
   const directions: CardinalDirection[] = [0, 4, 8, 12];
   let goalKey: string | undefined;
@@ -2028,6 +2648,7 @@ function routeBetween(
       break;
     }
     for (const direction of directions) {
+      if (reusableStart && current.x === start.x && current.y === start.y && direction !== startHeading) continue;
       if ((direction + 8) % 16 === current.heading || (current.arrivedUnderground && direction !== current.heading)) continue;
       const vector = directionVector(direction);
       const x = current.x + vector.x;
@@ -2046,32 +2667,47 @@ function routeBetween(
         continue;
       }
       if (current.arrivedUnderground || direction !== current.heading) continue;
-      for (let distance = 2; distance <= undergroundReach(undergroundName); distance += 1) {
-        const exitX = current.x + vector.x * distance;
-        const exitY = current.y + vector.y * distance;
-        if (exitX < minX || exitX > maxX || exitY < minY || exitY > maxY) break;
-        if (occupancy.has(`${exitX},${exitY}`)) continue;
-        const exitDistance = Math.abs(exitX - goal.x) + Math.abs(exitY - goal.y);
-        const forwardDistance = Math.abs(exitX + vector.x - goal.x) + Math.abs(exitY + vector.y - goal.y);
-        if (exitDistance === 1 && forwardDistance > exitDistance) continue;
-        const axis = vector.x === 0 ? "v" : "h";
-        const fixed = vector.x === 0 ? current.x : current.y;
-        let overlap = false;
-        for (let step = 0; step <= distance; step += 1) {
-          const coordinate = vector.x === 0 ? current.y + vector.y * step : current.x + vector.x * step;
-          if (tunnelTiles.has(`${undergroundName}:${axis}:${fixed}:${coordinate}`)) overlap = true;
+      // A blocked surface continuation can become an underground weave. The
+      // tunnel occupancy model rejects collinear same-tier overlap but permits
+      // perpendicular hidden crossings, matching Factorio's belt rules.
+      const tunnelNames = [undergroundName];
+      // A lower-tier underground may share a collinear hidden corridor with a
+      // blue underground. Use this general braid only when the complete
+      // material flow fits the red-belt capacity; surface transport stays at
+      // the requested tier.
+      if (undergroundName === "express-underground-belt" && activeBraidableMaterials.has(material)) {
+        tunnelNames.push("fast-underground-belt");
+      }
+      for (const candidateUnderground of tunnelNames) {
+        for (let distance = 2; distance <= undergroundReach(candidateUnderground); distance += 1) {
+          const exitX = current.x + vector.x * distance;
+          const exitY = current.y + vector.y * distance;
+          if (exitX < minX || exitX > maxX || exitY < minY || exitY > maxY) break;
+          if (occupancy.has(`${exitX},${exitY}`)) continue;
+          const exitDistance = Math.abs(exitX - goal.x) + Math.abs(exitY - goal.y);
+          const forwardDistance = Math.abs(exitX + vector.x - goal.x) + Math.abs(exitY + vector.y - goal.y);
+          if (exitDistance === 1 && forwardDistance > exitDistance) continue;
+          const axis = vector.x === 0 ? "v" : "h";
+          const fixed = vector.x === 0 ? current.x : current.y;
+          let overlap = false;
+          for (let step = 0; step <= distance; step += 1) {
+            const coordinate = vector.x === 0 ? current.y + vector.y * step : current.x + vector.x * step;
+            if (tunnelTiles.has(`${candidateUnderground}:${axis}:${fixed}:${coordinate}`)) overlap = true;
+          }
+          if (overlap) continue;
+          const key = keyFor(exitX, exitY, direction, true, candidateUnderground);
+          const cost = current.cost + distance + 2 + (candidateUnderground === undergroundName ? 0 : 0.75);
+          if (cost < (best.get(key) ?? Number.POSITIVE_INFINITY)) {
+            best.set(key, cost);
+            previous.set(key, current.key);
+            pointsByKey.set(key, { x: exitX, y: exitY, heading: direction,
+              arrivedUnderground: true, undergroundName: candidateUnderground });
+            push({ x: exitX, y: exitY, heading: direction, arrivedUnderground: true,
+              undergroundName: candidateUnderground,
+              cost, estimate: cost + heuristic(exitX, exitY), key });
+          }
+          break;
         }
-        if (overlap) continue;
-        const key = keyFor(exitX, exitY, direction, true);
-        const cost = current.cost + distance + 2;
-        if (cost < (best.get(key) ?? Number.POSITIVE_INFINITY)) {
-          best.set(key, cost);
-          previous.set(key, current.key);
-          pointsByKey.set(key, { x: exitX, y: exitY, heading: direction, arrivedUnderground: true });
-          push({ x: exitX, y: exitY, heading: direction, arrivedUnderground: true,
-            cost, estimate: cost + heuristic(exitX, exitY), key });
-        }
-        break;
       }
     }
   }
@@ -2137,10 +2773,12 @@ function routeBetween(
       : jumpFromPrevious
         ? directionBetweenLong(previousPoint!, point)
         : nextPoint ? directionBetween(point, nextPoint) : finalDirection;
+    if (!undergroundType && reusableBeltAt(point, direction)) return;
+    const routedUndergroundName = jumpToNext ? nextPoint?.undergroundName : point.undergroundName;
     drafts.push({
       role: undergroundType ? "underground-belt" : "material-bus",
       material,
-      name: undergroundType ? undergroundName : beltName,
+      name: undergroundType ? routedUndergroundName ?? undergroundName : beltName,
       position: tilePosition(point.x, point.y),
       direction,
       undergroundType,
@@ -2551,10 +3189,17 @@ function routedRailOrder(source: Tile, rails: Rail[], variant: number): Rail[] {
     Math.abs(left.start.x - source.x) + Math.abs(left.start.y - source.y) -
       Math.abs(right.start.x - source.x) - Math.abs(right.start.y - source.y));
   const sorted = [...rails];
-  if (variant === 1) return sorted.sort((a, b) => priority(a, b) || a.start.x - b.start.x || a.start.y - b.start.y);
-  if (variant === 2) return sorted.sort((a, b) => priority(a, b) || b.start.x - a.start.x || b.start.y - a.start.y);
-  if (variant === 3) return sorted.sort((a, b) => priority(a, b) || a.start.y - b.start.y || a.start.x - b.start.x);
-  if (variant === 4) return sorted.sort((a, b) => priority(a, b) || b.start.y - a.start.y || b.start.x - a.start.x);
+  // Preserve the critical-path schedule as variant zero, but make the
+  // negotiated alternatives genuinely spatial. Keeping critical priority as
+  // the primary key in every variant produced four identical serial trees and
+  // prevented compact floorplans from routing around their future terminals.
+  if (variant === 1) return nearestRailOrder(source, rails);
+  if (variant === 2) return sorted.sort((a, b) =>
+    b.start.x - a.start.x || b.start.y - a.start.y || priority(a, b));
+  if (variant === 3) return sorted.sort((a, b) =>
+    a.start.y - b.start.y || a.start.x - b.start.x || priority(a, b));
+  if (variant === 4) return sorted.sort((a, b) =>
+    b.start.y - a.start.y || b.start.x - a.start.x || priority(a, b));
   if (variant === 5) {
     return sorted.sort((a, b) => priority(a, b) ||
       Math.abs(b.start.x - source.x) + Math.abs(b.start.y - source.y) -
@@ -3089,27 +3734,43 @@ function routeItemMerge(
       `${splitter.x - 1},${splitter.y}`,
       `${splitter.x - 1},${splitter.y + 1}`,
     ]));
-    if (!routeSource(sources[0], splitters[0]) ||
-      !routeSource(sources[1], { x: splitters[0].x, y: splitters[0].y + 1 })) continue;
+    const last = splitters.at(-1)!;
+    const targetVector = directionVector(target.direction);
+    const targetIngress = `${target.start.x - targetVector.x},${target.start.y - targetVector.y}`;
+    const mergeEscape = `${last.x + 1},${last.y}`;
+    const mergeChainReservations = new Set(splitters.slice(0, -1).flatMap((splitter) => [
+      `${splitter.x + 1},${splitter.y}`,
+      `${splitter.x + 2},${splitter.y}`,
+    ]));
+    const targetReserved = new Set([
+      ...reservedTiles,
+      ...mergeIngressReservations,
+      ...mergeChainReservations,
+    ]);
+    if (terminalCanBeClaimed(reservedOwners, mergeEscape, material)) targetReserved.delete(mergeEscape);
+    if (terminalCanBeClaimed(reservedOwners, targetIngress, material)) targetReserved.delete(targetIngress);
+    if (!routeBetween(drafts, material, beltName, last, 4,
+      target.start, target.direction, 12, targetReserved)) continue;
     let routed = true;
     for (let index = 1; index < splitters.length; index += 1) {
       const chainReserved = new Set(mergeIngressReservations);
       chainReserved.delete(`${splitters[index].x - 1},${splitters[index].y}`);
       if (!routeBetween(drafts, material, beltName, splitters[index - 1], 4,
-        splitters[index], 4, 4, chainReserved) ||
-        !routeSource(sources[index + 1], { x: splitters[index].x, y: splitters[index].y + 1 })) {
+        splitters[index], 4, 4, chainReserved)) {
         routed = false;
         break;
       }
     }
     if (!routed) continue;
-    const last = splitters.at(-1)!;
-    const targetVector = directionVector(target.direction);
-    const targetIngress = `${target.start.x - targetVector.x},${target.start.y - targetVector.y}`;
-    const negotiated = new Set(reservedTiles);
-    if (terminalCanBeClaimed(reservedOwners, targetIngress, material)) negotiated.delete(targetIngress);
-    if (!routeBetween(drafts, material, beltName, last, 4,
-      target.start, target.direction, 12, negotiated)) continue;
+    if (!routeSource(sources[0], splitters[0]) ||
+      !routeSource(sources[1], { x: splitters[0].x, y: splitters[0].y + 1 })) continue;
+    for (let index = 1; index < splitters.length; index += 1) {
+      if (!routeSource(sources[index + 1], { x: splitters[index].x, y: splitters[index].y + 1 })) {
+        routed = false;
+        break;
+      }
+    }
+    if (!routed) continue;
     if (sources.every((source) => directedBeltPathExists(drafts, material, source.point, target.start))) return true;
   }
   drafts.length = baselineLength;
@@ -3133,8 +3794,12 @@ function routeMaterialNetworks(
   const placements = state.placements;
   const uniquePlacements = [...new Map([...placements.values()]
     .map((placement) => [placement.rack.planned.material, placement])).values()];
-  const byMaterial = new Map(uniquePlacements.map((placement) =>
-    [placement.rack.planned.material, placement.rack.planned]));
+  const byMaterial = new Map<string, PlannedRecipe>();
+  const producerPlacements = new Map<string, RackPlacement>();
+  uniquePlacements.forEach((placement) => rackOutputRails(placement.rack).forEach((rail) => {
+    byMaterial.set(rail.material, placement.rack.planned);
+    producerPlacements.set(rail.material, placement);
+  }));
   const recipeOrdinal = new Map(plan.recipes.map((planned, index) => [planned.material, index]));
   const downstream = new Map<string, string[]>();
   for (const planned of plan.recipes) {
@@ -3188,10 +3853,8 @@ function routeMaterialNetworks(
   for (const rails of materialConsumers.values()) {
     rails.forEach((rail) => {
       const vector = directionVector(rail.direction);
-      for (let distance = 1; distance <= 1; distance += 1) {
-        reserve({ x: rail.start.x - vector.x * distance, y: rail.start.y - vector.y * distance }, rail.material);
-        reserve({ x: rail.end.x + vector.x * distance, y: rail.end.y + vector.y * distance }, rail.material);
-      }
+      reserve({ x: rail.start.x - vector.x, y: rail.start.y - vector.y }, rail.material);
+      reserve({ x: rail.end.x + vector.x, y: rail.end.y + vector.y }, rail.material);
     });
   }
   for (const placement of uniquePlacements) {
@@ -3289,8 +3952,8 @@ function routeMaterialNetworks(
     const producer = byMaterial.get(material);
     let sourceCursors: Array<{ point: Tile; direction: CardinalDirection; supplyPerSecond?: number }>;
     if (producer) {
-      const placement = placements.get(material)!;
-      sourceCursors = rackOutputRails(placement.rack).map((local) => {
+      const placement = producerPlacements.get(material)!;
+      sourceCursors = rackOutputRails(placement.rack, material).map((local) => {
         const output = translatedRail(local, placement);
         return { point: output.end, direction: output.direction, supplyPerSecond: local.supplyPerSecond };
       });
@@ -3430,8 +4093,15 @@ function routeMaterialNetworks(
         if (assigned.length === 1) {
           const source = assigned[0];
           const rail = channelOrdered[consumerIndex];
+          const sourceVector = directionVector(source.direction);
+          const targetVector = directionVector(rail.direction);
+          const sourceEscape = `${source.point.x + sourceVector.x},${source.point.y + sourceVector.y}`;
+          const targetIngress = `${rail.start.x - targetVector.x},${rail.start.y - targetVector.y}`;
+          const negotiated = reservationsAgainstMaterial(reservedTiles, reservedOwners, material);
+          if (terminalCanBeClaimed(reservedOwners, sourceEscape, material)) negotiated.delete(sourceEscape);
+          if (terminalCanBeClaimed(reservedOwners, targetIngress, material)) negotiated.delete(targetIngress);
           if (!routeBetween(drafts, material, beltName, source.point, source.direction,
-            rail.start, rail.direction, 12, reservedTiles)) return undefined;
+            rail.start, rail.direction, 12, negotiated)) return undefined;
         } else if (!routeItemMerge(drafts, material, beltName, assigned,
           channelOrdered[consumerIndex], reservedTiles, reservedOwners)) return undefined;
       }
@@ -3443,12 +4113,13 @@ function routeMaterialNetworks(
     // Serially visiting its consumers preserves the exact residual flow
     // (16.3 -> 13.9 -> 1.8 -> 0, for example) without asking an unprioritized
     // splitter tree to approximate unequal demand ratios through backpressure.
-    // Boundary belts may carry both lanes, while an assembler output manifold
-    // is intentionally one-sided and is handled by the rate-aware parallel
-    // channel logic below.
+    // Both boundaries and one-sided producer manifolds may use this topology
+    // when their physical lane capacity covers the complete serial demand.
+    // Downstream backpressure fills local buffers, after which the requested
+    // steady-state residual flow continues to every later consumer.
     const singleBeltSerialManifold = sourceCursors.length === 1 &&
       ordered[0].type === "item" && totalDemand <= serialCapacity + 1e-9 &&
-      blockedContinuations <= 1 && !producer;
+      blockedContinuations <= 1;
     if (ordered[0].type === "item" && ordered.length > 1 &&
       !singleBeltSerialManifold &&
       (new Set(ordered.map((rail) => rail.consumerOrdinal)).size > 1 ||
@@ -3466,7 +4137,11 @@ function routeMaterialNetworks(
       const routeWithDirection = (sourceDirection: CardinalDirection): boolean => {
         const sourceVector = directionVector(sourceDirection);
         const sourceEscape = `${cursor.point.x + sourceVector.x},${cursor.point.y + sourceVector.y}`;
-        const routeReserved = reservationsAgainstMaterial(reservedTiles, reservedOwners, material);
+        const routeReserved = rail.type === "item"
+          ? new Set(reservedTiles)
+          : reservationsAgainstMaterial(reservedTiles, reservedOwners, material);
+        if (terminalCanBeClaimed(reservedOwners, sourceEscape, material)) routeReserved.delete(sourceEscape);
+        if (terminalCanBeClaimed(reservedOwners, targetIngress, material)) routeReserved.delete(targetIngress);
         if (rail.type !== "item") return routePipeBetween(drafts, material, cursor.point, sourceDirection,
           rail.start, rail.direction, 14, routeReserved);
         for (let retry = 0; retry < 8; retry += 1) {
@@ -3819,7 +4494,7 @@ function ensurePowerCoverage(drafts: Draft[]): boolean {
   return powerCoverageValid(drafts);
 }
 
-function measure(layout: CanonicalLayout): GlobalSynthesisMetrics {
+function measure(layout: CanonicalLayout, lnsIterations = 0): GlobalSynthesisMetrics {
   const extents = layout.drafts.map((draft) => {
     const half = draftHalfSize(draft);
     return {
@@ -3839,14 +4514,21 @@ function measure(layout: CanonicalLayout): GlobalSynthesisMetrics {
       draft.name === "pump").length;
   const undergroundEntities = layout.drafts.filter((draft) => draft.undergroundType !== undefined ||
     draft.name === "pipe-to-ground").length;
+  const directInsertionTransfers = layout.drafts.filter((draft) => draft.directTransfer).length;
+  const mixedMaterialBelts = new Set(layout.drafts
+    .map((draft) => draft.material)
+    .filter((material): material is string => material?.startsWith("mix:") ?? false)).size;
   return {
-    policy: "global-physical-synthesis",
+    policy: "integrated-machine-synthesis",
     width,
     height,
     area,
     entityCount: layout.drafts.length,
     transportEntities,
     undergroundEntities,
+    directInsertionTransfers,
+    mixedMaterialBelts,
+    lnsIterations,
     score: area * 10 + transportEntities * 2 + undergroundEntities * 8 + Math.max(width, height) * 25,
   };
 }
@@ -3859,12 +4541,19 @@ function buildIntegratedItemCandidates(
   reportSearch?: (detail: string) => void,
 ): GlobalSynthesisCandidate[] {
   const belt = BELTS[beltTier];
+  activeBraidableMaterials = new Set(Object.entries(plan.materialRates)
+    .filter(([, rate]) => rate <= BELTS.red.itemsPerSecond + 1e-9)
+    .map(([material]) => material));
+  const machineGraph = buildIntegratedMachineGraph(plan);
   const consumerCounts = new Map<string, number>();
   plan.recipes.forEach((planned) => planned.ingredientRates.forEach((ingredient) =>
     consumerCounts.set(ingredient.name, (consumerCounts.get(ingredient.name) ?? 0) + 1)));
   const terminalMaterials = new Set([...consumerCounts]
     .filter(([, consumers]) => consumers === 1)
     .map(([material]) => material));
+  const fullBeltMaterials = new Set(plan.inputs
+    .filter((input) => input.type === "item")
+    .map((input) => input.name));
   const fanoutMaterials = new Set(plan.recipes
     .filter((producer) => producer.materialType === "item" &&
       (consumerCounts.get(producer.material) ?? 0) >= 2)
@@ -3877,20 +4566,31 @@ function buildIntegratedItemCandidates(
   // routing harder. Keep both legal, rate-derived neighborhoods in the same
   // floorplanning beam and let the routed whole-factory objective choose.
   // This is a topology portfolio, not a recipe-specific layout library.
-  const searchCompactInternalTopologies = itemFanoutCount >= 2;
+  const searchCompactInternalTopologies = itemFanoutCount >= 2 || plan.recipes.some((planned) =>
+    planned.ingredientRates.filter((ingredient) => ingredient.type === "item").length >= 3);
   const byMaterial = new Map(plan.recipes.map((planned) => [planned.material, planned]));
   const embedded = new Set<string>();
   const pairByConsumer = new Map<string, MachineRack>();
   const pairCandidates = plan.recipes.flatMap((consumer) => consumer.ingredientRates
     .map((ingredient) => byMaterial.get(ingredient.name))
     .filter((source): source is PlannedRecipe => source !== undefined)
-    .map((source) => ({ source, consumer, rate: plan.materialRates[source.material] ?? 0 })))
-    .filter(({ source }) => terminalMaterials.has(source.material))
-    .sort((left, right) => right.rate - left.rate);
-  for (const { source, consumer } of pairCandidates) {
+    .map((source) => {
+      const directRate = consumer.ingredientRates.find((ingredient) => ingredient.name === source.material)
+        ?.perSecond ?? 0;
+      return { source, consumer, rate: directRate, share: directRate / source.outputPerSecond };
+    }))
+    .sort((left, right) => right.rate - left.rate || right.share - left.share);
+  for (const { source, consumer, share } of pairCandidates) {
     if (embedded.has(source.material) || embedded.has(consumer.material) || pairByConsumer.has(consumer.material)) continue;
-    const pair = buildDirectPairRack(source, consumer, belt.entityName) ??
-      buildGeneralDirectPairRack(source, consumer, belt.entityName);
+    const parametricPair = buildParametricDirectInsertionRack(source, consumer, belt.entityName);
+    // The older two-machine geometries expose no residual producer rail. They
+    // are valid only when this edge consumes the producer's complete planned
+    // output. Partial fan-out must use the max-flow topology above, which
+    // explicitly allocates separately belted residual machines.
+    const pair = parametricPair ?? (share >= 1 - 1e-9
+      ? buildDirectPairRack(source, consumer, belt.entityName) ??
+        buildGeneralDirectPairRack(source, consumer, belt.entityName)
+      : undefined);
     if (!pair) continue;
     embedded.add(source.material);
     embedded.add(consumer.material);
@@ -3905,12 +4605,12 @@ function buildIntegratedItemCandidates(
       return [pair];
     }
     if (embedded.has(planned.material)) return [];
-    const rack = buildMachineRack(planned, belt.entityName, terminalMaterials, false);
+    const rack = buildMachineRack(planned, belt.entityName, terminalMaterials, false, fullBeltMaterials);
     if (!rack) failedRacks.push(planned.material);
     if (rack) {
       const variants = [rack];
       if (searchCompactInternalTopologies) {
-        const compact = buildMachineRack(planned, belt.entityName, terminalMaterials, true);
+        const compact = buildMachineRack(planned, belt.entityName, terminalMaterials, true, fullBeltMaterials);
         if (compact && rackTopologySignature(compact) !== rackTopologySignature(rack)) variants.push(compact);
       }
       topologyVariants.set(planned.material, variants);
@@ -3920,22 +4620,33 @@ function buildIntegratedItemCandidates(
   if (racks.length + embedded.size / 2 !== plan.recipes.length) {
     throw new Error(`Global rack synthesis failed for ${failedRacks.join(",")}; last=${lastRoutingDiagnostic}.`);
   }
-  const physicalMachineCount = plan.recipes.reduce((sum, planned) => sum + planned.machineCount, 0);
-  // At a belt-limited boundary, smelting and cable racks can contain hundreds
-  // of machines. Routing forty-one ordering restarts through each enormous
+  reportSearch?.(`Synthesized ${racks.length} machine neighborhood${racks.length === 1 ? "" : "s"}; ` +
+    `${racks.reduce((sum, rack) => sum + rack.drafts.filter((draft) =>
+      draft.material?.startsWith("mix:")).length, 0)} shared-lane belt tiles`);
+  const physicalMachineCount = machineGraph.machines.length;
+  // At a belt-limited boundary, smelting and cable racks can contain well over
+  // a hundred machines. Routing forty-one ordering restarts through each enormous
   // floorplan adds minutes while contributing negligible placement diversity.
   // Keep the same global solver and seeds, but spend the beam/restart budget on
   // geometry rather than repeating equivalent routes through unavoidable rows.
-  const capacityScale = physicalMachineCount > 256;
-  const lowRateGraphScale = !capacityScale && physicalMachineCount <= 64 &&
-    (plan.recipes.length > 7 || complexFanout);
-  const moderateScale = !capacityScale && (physicalMachineCount > 64 || lowRateGraphScale);
+  const capacityScale = physicalMachineCount > 128;
+  const laneSaturatedGraph = physicalMachineCount > 12 && Object.values(plan.materialRates)
+    .some((rate) => rate > belt.itemsPerSecond / 2 + 1e-9);
+  const lowRateGraphScale = !capacityScale && physicalMachineCount <= 48 &&
+    (physicalMachineCount > 32 || laneSaturatedGraph || plan.recipes.length > 7 || complexFanout);
+  const moderateScale = !capacityScale && (physicalMachineCount > 48 || lowRateGraphScale);
   const compactRacks = racks.map((rack) => topologyVariants.get(rack.planned.material)?.at(-1) ?? rack);
   const hasCompactFamily = compactRacks.some((rack, index) =>
     rackTopologySignature(rack) !== rackTopologySignature(racks[index]));
-  const rackFamilies = hasCompactFamily ? [compactRacks, racks] : [racks];
-  const searchedPlacementStates = rackFamilies.flatMap((family, familyIndex) => {
-    const compactFamily = hasCompactFamily && familyIndex === 0;
+  // Very large factories get the robust conventional family first. Compact
+  // variants still remain in the same portfolio, but routing a full failed
+  // compact family before the first feasible seed can dominate interactive
+  // latency without improving the accepted result.
+  const rackFamilies = hasCompactFamily
+    ? capacityScale || moderateScale ? [racks, compactRacks] : [compactRacks, racks]
+    : [racks];
+  const searchedPlacementStates = rackFamilies.flatMap((family) => {
+    const compactFamily = hasCompactFamily && family === compactRacks;
     const preferredFamily = !hasCompactFamily || compactFamily;
     return capacityScale
       ? searchPlacements(family, plan, 8, false, new Map(), reportSearch)
@@ -3978,7 +4689,23 @@ function buildIntegratedItemCandidates(
   ]);
   const placementSignatures = new Set<string>();
   const recipeOrder = new Map(plan.recipes.map((planned, index) => [planned.material, index]));
-  const placementStates = [...seededPlacementStates, ...searchedPlacementStates].filter((state) => {
+  const initialPlacementStates = [...seededPlacementStates, ...searchedPlacementStates];
+  const lns = improvePlacementsWithLargeNeighborhoodSearch(
+    initialPlacementStates,
+    racks,
+    plan,
+    topologyVariants,
+    capacityScale ? 0 : moderateScale ? 8 : 32,
+    reportSearch,
+  );
+  // Give the best few repaired states an early routed evaluation, then retain
+  // the proven seed/beam order. Approximate packing score alone must not bury
+  // routable seeds behind dozens of dense-but-congested states.
+  const placementStates = [
+    ...[...lns.states].sort((left, right) => left.score - right.score).slice(0, 4),
+    ...initialPlacementStates,
+  ]
+    .filter((state) => {
     const signature = [...state.placements]
       .sort(([left], [right]) => (recipeOrder.get(left) ?? 0) - (recipeOrder.get(right) ?? 0))
       .map(([material, placement]) => {
@@ -3989,8 +4716,8 @@ function buildIntegratedItemCandidates(
       }).join("|");
     if (placementSignatures.has(signature)) return false;
     placementSignatures.add(signature);
-    return true;
-  });
+      return true;
+    });
   // Route the requested boundaries directly. Rotating a finished factory is
   // not physically equivalent in Factorio: assembling-machine fluid boxes do
   // not rotate with the blueprint entity. Direct side routing keeps every
@@ -4010,7 +4737,7 @@ function buildIntegratedItemCandidates(
   let bestCandidateScore = Number.POSITIVE_INFINITY;
   let lastImprovementState = 0;
   for (const [stateIndex, state] of placementStates.entries()) {
-    if (capacityScale && candidates.length >= 4 && stateIndex >= 16) break;
+    if (capacityScale && candidates.length >= 1 && stateIndex >= 5) break;
     // On a large multi-recipe graph, one successful route already proves a
     // complete floorplan across every material network. Sample several
     // distinct placements, but do not spend four route-order restarts on the
@@ -4056,10 +4783,13 @@ function buildIntegratedItemCandidates(
       );
       if (!inputPositions) {
         materialRoutingFailures += 1;
+        if (stateIndex < 8 && orderVariant === orderVariants.at(-1)) {
+          reportSearch?.(`Floorplan ${stateIndex + 1} needs another routing topology: ${lastRoutingDiagnostic}`);
+        }
         continue;
       }
       const targetPlacement = state.placements.get(plan.target)!;
-      const targetOutputRails = rackOutputRails(targetPlacement.rack)
+      const targetOutputRails = rackOutputRails(targetPlacement.rack, plan.target)
         .map((rail) => translatedRail(rail, targetPlacement));
       let targetOutputRail = targetOutputRails[0];
       if (plan.targetType === "item" && targetOutputRails.length > 1) {
@@ -4072,24 +4802,43 @@ function buildIntegratedItemCandidates(
         const centerY = Math.round((minimumY + maximumY) / 2);
         const outwardDirection: CardinalDirection = canonicalOutputSide === "north" ? 0 :
           canonicalOutputSide === "east" ? 4 : canonicalOutputSide === "south" ? 8 : 12;
-        const mergeClearance = 24 + targetOutputRails.length * 3;
-        const mergePoint = canonicalOutputSide === "north" ? { x: centerX, y: minimumY - mergeClearance } :
-          canonicalOutputSide === "east" ? { x: maximumX + mergeClearance, y: centerY } :
-            canonicalOutputSide === "south" ? { x: centerX, y: maximumY + mergeClearance } :
-              { x: minimumX - mergeClearance, y: centerY };
-        targetOutputRail = {
-          material: plan.target,
-          type: "item",
-          start: mergePoint,
-          end: mergePoint,
-          direction: outwardDirection,
-          supplyPerSecond: plan.effectiveOutputPerSecond,
-        };
-        drafts.push({ role: "output-belt", material: plan.target, name: belt.entityName,
-          position: tilePosition(mergePoint.x, mergePoint.y), direction: outwardDirection });
         const sources = targetOutputRails.map((rail) => ({ point: rail.end, direction: rail.direction }));
-        if (!routeItemMerge(drafts, plan.target, belt.entityName, sources,
-          targetOutputRail, new Set(), new Map())) {
+        const mergeBaseline = drafts.length;
+        let merged = false;
+        // Search the nearest legal exterior merge before trying progressively
+        // wider clearances. The old fixed 24+ tile apron dominated otherwise
+        // tiny direct-insertion factories.
+        const mergeClearances = [
+          3 + targetOutputRails.length,
+          6 + targetOutputRails.length,
+          10 + targetOutputRails.length,
+          16 + targetOutputRails.length,
+          24 + targetOutputRails.length * 3,
+        ];
+        for (const mergeClearance of mergeClearances) {
+          drafts.length = mergeBaseline;
+          const mergePoint = canonicalOutputSide === "north" ? { x: centerX, y: minimumY - mergeClearance } :
+            canonicalOutputSide === "east" ? { x: maximumX + mergeClearance, y: centerY } :
+              canonicalOutputSide === "south" ? { x: centerX, y: maximumY + mergeClearance } :
+                { x: minimumX - mergeClearance, y: centerY };
+          const candidateRail: Rail = {
+            material: plan.target,
+            type: "item",
+            start: mergePoint,
+            end: mergePoint,
+            direction: outwardDirection,
+            supplyPerSecond: plan.effectiveOutputPerSecond,
+          };
+          drafts.push({ role: "output-belt", material: plan.target, name: belt.entityName,
+            position: tilePosition(mergePoint.x, mergePoint.y), direction: outwardDirection });
+          if (!routeItemMerge(drafts, plan.target, belt.entityName, sources,
+            candidateRail, new Set(), new Map())) continue;
+          targetOutputRail = candidateRail;
+          merged = true;
+          break;
+        }
+        if (!merged) {
+          drafts.length = mergeBaseline;
           outputRoutingFailures += 1;
           continue;
         }
@@ -4136,7 +4885,9 @@ function buildIntegratedItemCandidates(
         canonicalOutputSide,
         rotationQuarterTurns,
       };
-      const metrics = measure(layout);
+      const metrics = measure(layout, lns.iterations);
+      reportSearch?.(`Validated floorplan ${stateIndex + 1}: ${metrics.width}×${metrics.height}, ` +
+        `${metrics.area} tiles, ${metrics.transportEntities} transport entities`);
       if (metrics.score < bestCandidateScore) lastImprovementState = stateIndex;
       bestCandidateScore = Math.min(bestCandidateScore, metrics.score);
       candidates.push({ layout, metrics });

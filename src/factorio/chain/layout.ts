@@ -11,6 +11,8 @@ export interface Draft {
   recipeSetting?: string;
   undergroundType?: "input" | "output";
   outputPriority?: "left" | "right";
+  /** Compiler-only provenance; never serialized into a Factorio blueprint. */
+  directTransfer?: boolean;
 }
 
 export interface CanonicalLayout {

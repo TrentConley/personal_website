@@ -7,6 +7,7 @@ import { materialType } from "./catalog";
 import { synthesizeGlobalFactory } from "./global-synthesis";
 import { finalizeLayout } from "./layout";
 import { DEFAULT_PIPE_CAPACITY_PER_SECOND, planChain } from "./planner";
+import { validateFinalChainBlueprint } from "./validator";
 import type {
   ChainGenerationProgressReporter,
   ChainGeneratorConfig,
@@ -81,6 +82,19 @@ export function generateChainBlueprint(
     detail: "Encoding and verifying the Factorio import string",
   });
   const blueprintString = encodeBlueprint(document);
+  const validation = validateFinalChainBlueprint({
+    plan,
+    document,
+    blueprintString,
+    entities: layout.entities,
+    inputPositions: layout.inputPositions,
+    outputPosition: layout.outputPosition,
+  });
+  if (!validation.valid) {
+    const failures = validation.checks.filter((check) => !check.passed)
+      .map((check) => `${check.id}: ${check.detail}`).join("; ");
+    throw new Error(`Final blueprint validation failed: ${failures}`);
+  }
   const itemCost = layout.entities.reduce<Record<string, number>>((cost, planned) => {
     cost[planned.entity.name] = (cost[planned.entity.name] ?? 0) + 1;
     return cost;
@@ -109,8 +123,9 @@ export function generateChainBlueprint(
         plan.targetType === "item" ? BELTS[resolved.beltTier].itemsPerSecond : resolved.pipeCapacityPerSecond,
     },
     itemCost,
+    validation,
     spatialOptimization: {
-      strategy: "global-physical-synthesis-v1" as const,
+      strategy: "integrated-machine-synthesis-v2" as const,
       policy: selectedSpatialCandidate.metrics.policy,
       candidatesAccepted: spatialCandidates.length,
       width: selectedSpatialCandidate.metrics.width,
@@ -118,6 +133,9 @@ export function generateChainBlueprint(
       area: selectedSpatialCandidate.metrics.area,
       transportEntities: selectedSpatialCandidate.metrics.transportEntities,
       undergroundEntities: selectedSpatialCandidate.metrics.undergroundEntities,
+      directInsertionTransfers: selectedSpatialCandidate.metrics.directInsertionTransfers,
+      mixedMaterialBelts: selectedSpatialCandidate.metrics.mixedMaterialBelts,
+      lnsIterations: selectedSpatialCandidate.metrics.lnsIterations,
       score: selectedSpatialCandidate.metrics.score,
     },
     warnings: [
