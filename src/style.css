@@ -2453,6 +2453,84 @@ body.factorio-preview-open {
   font-size: 0.52rem;
 }
 
+.factorio-benchmark {
+  margin-top: 1rem;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 1px solid var(--factory-line);
+  border-radius: 16px;
+  color: var(--factory-text);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(130, 210, 156, 0.09), transparent 30%),
+    linear-gradient(145deg, rgba(24, 31, 26, 0.96), rgba(15, 20, 17, 0.98));
+}
+
+.factorio-benchmark__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.factorio-benchmark__heading small {
+  color: var(--factory-green);
+  font: 0.58rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.factorio-benchmark__heading h2 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  letter-spacing: -0.04em;
+}
+
+.factorio-benchmark__heading > span {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(130, 210, 156, 0.22);
+  border-radius: 999px;
+  color: #a8d8b6;
+  font: 0.58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.factorio-benchmark__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 1.6rem;
+  border: 1px solid var(--factory-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.factorio-benchmark__metrics > div {
+  display: grid;
+  min-height: 92px;
+  padding: 1rem;
+  align-content: center;
+  gap: 0.25rem;
+  border-right: 1px solid var(--factory-line);
+}
+
+.factorio-benchmark__metrics > div:last-child {
+  border-right: 0;
+}
+
+.factorio-benchmark__metrics strong {
+  font: 500 clamp(1.45rem, 3vw, 2.25rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.06em;
+}
+
+.factorio-benchmark__metrics span,
+.factorio-benchmark > p {
+  color: #89928a;
+  font-size: 0.64rem;
+  line-height: 1.55;
+}
+
+.factorio-benchmark > p {
+  max-width: 900px;
+  margin: 1.2rem 0 0;
+}
+
 @media (max-width: 960px) {
   .factorio-hero {
     grid-template-columns: 1fr;
@@ -2469,6 +2547,18 @@ body.factorio-preview-open {
 
   .factorio-result {
     min-height: 0;
+  }
+
+  .factorio-benchmark__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .factorio-benchmark__metrics > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .factorio-benchmark__metrics > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--factory-line);
   }
 }
 
@@ -2501,6 +2591,11 @@ body.factorio-preview-open {
   }
 
   .factorio-actions {
+    flex-direction: column;
+  }
+
+  .factorio-benchmark__heading {
+    align-items: flex-start;
     flex-direction: column;
   }
 

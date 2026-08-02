@@ -542,6 +542,31 @@ export function FactorioBlueprintPage() {
             )}
           </section>
         </div>
+
+        <section className="factorio-benchmark" aria-labelledby="factorio-benchmark-heading">
+          <div className="factorio-benchmark__heading">
+            <div>
+              <small>Measured, not eyeballed</small>
+              <h2 id="factorio-benchmark-heading">Human blueprint benchmark</h2>
+            </div>
+            <span>Factorio 2.0.77 live gate</span>
+          </div>
+          <div className="factorio-benchmark__metrics">
+            <div><strong>5,000</strong><span>unique community blueprints</span></div>
+            <div><strong>2</strong><span>independent public sources</span></div>
+            <div><strong>118</strong><span>strict normalized references</span></div>
+            <div><strong>47</strong><span>fully matched live comparisons</span></div>
+          </div>
+          <p>
+            References are normalized to the same vanilla technology, inferred recipe boundary,
+            and measured sustained output. Both the human design and Foundry result must import,
+            place, power, accept their inputs, and produce in the game before footprint is scored.
+            The live audit produced 121 human references and 48 of 51 generated candidates; 47
+            pairs also matched sustained throughput within the strict comparison window.
+            Modules, beacons, quality, robots, chests, and ambiguous boundaries are excluded from
+            this no-modules comparison.
+          </p>
+        </section>
       </main>
     </div>
   );
