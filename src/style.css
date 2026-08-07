@@ -839,6 +839,489 @@ img {
   }
 }
 
+/* Mars tracker — oblique transfer view */
+.mars-tracker {
+  background:
+    radial-gradient(circle at 17% 24%, rgba(245, 226, 190, 0.48) 0 0.55px, transparent 0.95px),
+    radial-gradient(circle at 81% 15%, rgba(235, 206, 170, 0.36) 0 0.5px, transparent 0.9px),
+    radial-gradient(circle at 88% 72%, rgba(195, 103, 67, 0.38) 0 0.6px, transparent 1px),
+    radial-gradient(circle at 12% 78%, rgba(235, 206, 170, 0.28) 0 0.45px, transparent 0.9px),
+    radial-gradient(ellipse at 67% 54%, rgba(127, 55, 34, 0.105), transparent 35%),
+    linear-gradient(153deg, #12100f 0%, #080808 42%, #040405 100%);
+}
+
+.mars-tracker::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse at 55% 55%, black, transparent 70%);
+  opacity: 0.38;
+  pointer-events: none;
+  content: "";
+}
+
+.mars-tracker__mark {
+  z-index: 31;
+}
+
+.mars-tracker__details-toggle {
+  position: absolute;
+  top: clamp(1rem, 3vw, 2rem);
+  right: clamp(1rem, 3vw, 2rem);
+  z-index: 31;
+  display: flex;
+  min-width: 96px;
+  height: 34px;
+  padding: 0 0.4rem 0 0.9rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  border: 1px solid rgba(238, 233, 223, 0.2);
+  border-radius: 999px;
+  color: rgba(238, 233, 223, 0.62);
+  background: rgba(8, 8, 8, 0.5);
+  backdrop-filter: blur(14px);
+  font-size: 0.54rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.mars-tracker__details-toggle i {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: rgba(238, 233, 223, 0.9);
+  background: rgba(238, 233, 223, 0.08);
+  font-size: 0.9rem;
+  font-style: normal;
+}
+
+.mars-tracker__details-toggle:hover,
+.mars-tracker__details-toggle:focus-visible {
+  border-color: rgba(238, 233, 223, 0.62);
+  color: var(--mars-cream);
+  background: rgba(16, 14, 13, 0.88);
+  outline: none;
+}
+
+.mars-tracker__readout {
+  top: clamp(5.2rem, 12vh, 8.2rem);
+  left: clamp(1.25rem, 7vw, 7rem);
+  z-index: 9;
+  text-align: left;
+  transform: none;
+  transition: opacity 280ms ease, transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mars-tracker__readout > span {
+  display: block;
+  margin-bottom: 0.9rem;
+  color: rgba(238, 233, 223, 0.32);
+  font: 0.5rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.16em;
+}
+
+.mars-tracker__readout > div {
+  justify-content: flex-start;
+  gap: 0.75rem;
+}
+
+.mars-tracker__readout strong {
+  font-size: clamp(3rem, 6.3vw, 6rem);
+  font-weight: 280;
+}
+
+.mars-tracker__readout small {
+  color: rgba(238, 233, 223, 0.38);
+  font: 0.54rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+}
+
+.mars-orbit-figure {
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.mars-orbit-map {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  overflow: visible;
+  transform: translate(3.5vw, 5vh);
+  transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease;
+}
+
+.mars-tracker.is-details-open .mars-orbit-map {
+  transform: translate(-10vw, 5vh) scale(0.94);
+}
+
+.mars-tracker.is-details-open .mars-tracker__readout {
+  opacity: 0.38;
+  transform: translateX(-1.5rem);
+}
+
+.mars-orbit-map__orbit {
+  stroke-linecap: round;
+}
+
+.mars-orbit-map__orbit--earth {
+  stroke: rgba(187, 204, 193, 0.2);
+  stroke-width: 0.9px;
+}
+
+.mars-orbit-map__orbit--mars {
+  stroke: rgba(205, 111, 70, 0.25);
+  stroke-width: 1px;
+}
+
+.mars-orbit-map__transfer,
+.mars-orbit-map__transfer-glow,
+.mars-orbit-map__transfer-pulse {
+  fill: none;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.mars-orbit-map__transfer-glow {
+  stroke: rgba(211, 112, 67, 0.5);
+  stroke-width: 10px;
+}
+
+.mars-orbit-map__transfer {
+  stroke: url(#transfer-gradient);
+  stroke-width: 2.15px;
+}
+
+.mars-orbit-map__transfer-pulse {
+  stroke: rgba(255, 242, 218, 0.76);
+  stroke-dasharray: 1px 42px;
+  stroke-width: 2.7px;
+  animation: mars-transfer-flow 5s linear infinite;
+}
+
+.mars-orbit-map__arrival > circle:first-child {
+  fill: rgba(193, 92, 54, 0.035);
+  stroke: rgba(211, 111, 68, 0.48);
+  stroke-dasharray: 0.007 0.012;
+  stroke-width: 0.004;
+}
+
+.mars-orbit-map__arrival > circle:nth-child(2) {
+  fill: #c56842;
+  filter: drop-shadow(0 0 0.025px #c56842);
+}
+
+.mars-orbit-map__label--arrival {
+  fill: rgba(224, 150, 111, 0.52);
+}
+
+.mars-tracker__arcsecond-teaser {
+  position: absolute;
+  right: clamp(1.25rem, 7vw, 7rem);
+  bottom: clamp(4.4rem, 9vh, 6.5rem);
+  z-index: 9;
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+  pointer-events: none;
+  transition: opacity 220ms ease, transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mars-tracker__arcsecond-teaser strong {
+  color: rgba(238, 233, 223, 0.78);
+  font: 350 clamp(1.4rem, 2.7vw, 2.4rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.055em;
+}
+
+.mars-tracker__arcsecond-teaser span {
+  color: rgba(238, 233, 223, 0.25);
+  font: 0.45rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+}
+
+.mars-tracker.is-details-open .mars-tracker__arcsecond-teaser {
+  opacity: 0;
+  transform: translateX(1rem);
+}
+
+.mars-tracker__clock {
+  top: auto;
+  bottom: clamp(1.4rem, 3vw, 2.4rem);
+  left: clamp(1.25rem, 3vw, 2.2rem);
+  transform: none;
+  transition: opacity 220ms ease;
+}
+
+.mars-tracker__method {
+  z-index: 10;
+}
+
+.mars-details {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: min(430px, calc(100vw - 2rem));
+  padding: clamp(6.5rem, 12vh, 8rem) clamp(1.5rem, 3vw, 2.5rem) 2.2rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-left: 1px solid rgba(238, 233, 223, 0.1);
+  background:
+    radial-gradient(circle at 100% 20%, rgba(151, 64, 38, 0.14), transparent 34%),
+    rgba(8, 8, 8, 0.9);
+  box-shadow: -40px 0 100px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(24px);
+  opacity: 0;
+  transform: translateX(100%);
+  pointer-events: none;
+  transition: opacity 260ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mars-tracker.is-details-open .mars-details {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.mars-details__apparent > span,
+.mars-details__transfer span,
+.mars-details dt {
+  color: rgba(238, 233, 223, 0.3);
+  font: 0.48rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.13em;
+}
+
+.mars-details__apparent output {
+  display: block;
+  margin-top: 1.15rem;
+  color: #f0eae0;
+  font: 300 clamp(2.45rem, 4.5vw, 3.7rem)/0.95 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.075em;
+}
+
+.mars-details__apparent > small {
+  display: block;
+  margin-top: 0.85rem;
+  color: rgba(207, 121, 82, 0.68);
+  font: 0.58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mars-details__arc-scale {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 1.8rem;
+  color: rgba(238, 233, 223, 0.25);
+  font: 0.46rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mars-details__arc-scale > div {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 24px;
+  margin-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(238, 233, 223, 0.14);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(10% - 1px),
+    rgba(238, 233, 223, 0.1) calc(10% - 1px) 10%
+  );
+}
+
+.mars-details__arc-scale i {
+  position: absolute;
+  bottom: -4px;
+  left: var(--arc-position);
+  width: 9px;
+  height: 9px;
+  border: 2px solid #0a0909;
+  border-radius: 50%;
+  background: #cc6c43;
+  box-shadow: 0 0 14px rgba(204, 108, 67, 0.66);
+  transform: translateX(-50%);
+  transition: left 1s linear;
+}
+
+.mars-details__arc-scale > span:last-child {
+  text-align: right;
+}
+
+.mars-details__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 2.3rem 0 0;
+  border-top: 1px solid rgba(238, 233, 223, 0.1);
+  border-left: 1px solid rgba(238, 233, 223, 0.1);
+}
+
+.mars-details__grid > div {
+  min-width: 0;
+  padding: 0.9rem;
+  border-right: 1px solid rgba(238, 233, 223, 0.1);
+  border-bottom: 1px solid rgba(238, 233, 223, 0.1);
+}
+
+.mars-details dd,
+.mars-details dt {
+  margin: 0;
+}
+
+.mars-details dd {
+  margin-top: 0.5rem;
+  color: rgba(238, 233, 223, 0.72);
+  font: 0.67rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.mars-details__transfer {
+  margin-top: 2.3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(202, 101, 61, 0.34);
+}
+
+.mars-details__transfer > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.mars-details__transfer > div strong {
+  color: rgba(238, 233, 223, 0.8);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.mars-details__transfer dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 1.25rem 0 0;
+}
+
+.mars-details__transfer dl > div {
+  min-width: 0;
+  padding-right: 0.55rem;
+}
+
+.mars-details__transfer p {
+  margin: 1.5rem 0 0;
+  color: rgba(238, 233, 223, 0.3);
+  font: 0.58rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@keyframes mars-transfer-flow {
+  to {
+    stroke-dashoffset: -215px;
+  }
+}
+
+@media (max-width: 640px) {
+  .mars-tracker__details-toggle {
+    top: 1rem;
+    right: 1rem;
+  }
+
+  .mars-tracker__readout {
+    top: 5.4rem;
+    left: 1.2rem;
+  }
+
+  .mars-tracker__readout > span {
+    margin-bottom: 0.7rem;
+  }
+
+  .mars-tracker__readout > div {
+    display: flex;
+  }
+
+  .mars-tracker__readout strong {
+    font-size: clamp(2.8rem, 15vw, 4.2rem);
+  }
+
+  .mars-orbit-figure {
+    inset: 0;
+  }
+
+  .mars-orbit-map {
+    width: 100vw;
+    height: 100dvh;
+    transform: translateY(4.5vh);
+  }
+
+  .mars-tracker.is-details-open .mars-orbit-map {
+    opacity: 0.55;
+    transform: translateY(-18vh) scale(0.84);
+  }
+
+  .mars-tracker.is-details-open .mars-tracker__readout {
+    opacity: 0.16;
+    transform: translateY(-0.5rem);
+  }
+
+  .mars-orbit-map__label {
+    font-size: 0.052px;
+  }
+
+  .mars-tracker__arcsecond-teaser {
+    right: 1.2rem;
+    bottom: 4.4rem;
+  }
+
+  .mars-tracker__clock {
+    right: auto;
+    bottom: 1.5rem;
+    left: 1.2rem;
+  }
+
+  .mars-tracker.is-details-open .mars-tracker__clock {
+    opacity: 0;
+  }
+
+  .mars-details {
+    top: auto;
+    left: 0;
+    width: 100%;
+    height: min(55svh, 520px);
+    padding: 2rem 1.25rem 1.5rem;
+    border-top: 1px solid rgba(238, 233, 223, 0.12);
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+    transform: translateY(100%);
+  }
+
+  .mars-tracker.is-details-open .mars-details {
+    transform: translateY(0);
+  }
+
+  .mars-details__apparent output {
+    font-size: clamp(2.2rem, 12vw, 3.1rem);
+  }
+
+  .mars-details__grid,
+  .mars-details__transfer {
+    margin-top: 1.7rem;
+  }
+
+  .mars-tracker__method {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mars-orbit-map__transfer-pulse {
+    animation: none;
+  }
+}
+
 /* Article */
 .article-view {
   min-height: 100vh;

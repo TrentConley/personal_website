@@ -22,6 +22,8 @@ export type MarsEphemeris = {
   distanceKm: number;
   lightMinutes: number;
   apparentDiameterArcseconds: number;
+  apparentDiameterRateArcsecondsPerSecond: number;
+  apparentDistanceKm: number;
   solarElongationDegrees: number;
   rightAscensionHours: number;
   declinationDegrees: number;
@@ -44,6 +46,21 @@ function eclipticPoint(body: Body, time: Date): EclipticPoint {
   return { x: point.x, y: point.y, z: point.z };
 }
 
+function apparentDiameter(time: Date) {
+  const apparentVector = GeoVector(Body.Mars, time, true);
+  const apparentDistanceKm = apparentVector.Length() * ASTRONOMICAL_UNIT_KM;
+  const apparentRadiusRadians = Math.asin(
+    MARS_EQUATORIAL_RADIUS_KM / apparentDistanceKm,
+  );
+
+  return {
+    apparentVector,
+    apparentDistanceKm,
+    apparentDiameterArcseconds:
+      apparentRadiusRadians * 2 * (180 / Math.PI) * 3_600,
+  };
+}
+
 export function getMarsEphemeris(time = new Date()): MarsEphemeris {
   const earth = eclipticPoint(Body.Earth, time);
   const mars = eclipticPoint(Body.Mars, time);
@@ -55,14 +72,12 @@ export function getMarsEphemeris(time = new Date()): MarsEphemeris {
 
   // GeoVector includes light-travel correction. Its distance is therefore the
   // one that determines the disc Mars presents to an observer on Earth now.
-  const apparentVector = GeoVector(Body.Mars, time, true);
-  const apparentDistanceKm = apparentVector.Length() * ASTRONOMICAL_UNIT_KM;
-  const apparentRadiusRadians = Math.asin(
-    MARS_EQUATORIAL_RADIUS_KM / apparentDistanceKm,
+  const apparent = apparentDiameter(time);
+  const oneMinuteBefore = apparentDiameter(
+    new Date(time.getTime() - 60_000),
   );
-  const apparentDiameterArcseconds =
-    apparentRadiusRadians * 2 * (180 / Math.PI) * 3_600;
-  const equatorial = EquatorFromVector(apparentVector);
+  const oneMinuteAfter = apparentDiameter(new Date(time.getTime() + 60_000));
+  const equatorial = EquatorFromVector(apparent.apparentVector);
 
   return {
     time,
@@ -71,7 +86,12 @@ export function getMarsEphemeris(time = new Date()): MarsEphemeris {
     distanceAu,
     distanceKm,
     lightMinutes: distanceKm / LIGHT_SPEED_KM_PER_SECOND / 60,
-    apparentDiameterArcseconds,
+    apparentDiameterArcseconds: apparent.apparentDiameterArcseconds,
+    apparentDiameterRateArcsecondsPerSecond:
+      (oneMinuteAfter.apparentDiameterArcseconds -
+        oneMinuteBefore.apparentDiameterArcseconds) /
+      120,
+    apparentDistanceKm: apparent.apparentDistanceKm,
     solarElongationDegrees: AngleFromSun(Body.Mars, time),
     rightAscensionHours: equatorial.ra,
     declinationDegrees: equatorial.dec,
