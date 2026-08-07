@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { projects } from "../data/profile";
-import {
-  orbitBodyByPanel,
-  OrbitPanel,
-  OrbitalField,
-} from "./OrbitalField";
+import { OrbitPanel, OrbitalField } from "./OrbitalField";
 
 type HomePageProps = {
   initialPanel?: OrbitPanel | null;
@@ -52,7 +48,7 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
             {activePanel === "projects" ? (
               <div className="orbit-panel__content">
                 <p className="orbit-panel__label">
-                  Projects · {orbitBodyByPanel.projects}
+                  Projects
                 </p>
                 <div className="project-mini-list">
                   {projects.map((project) => (
@@ -79,7 +75,7 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
             {activePanel === "writing" ? (
               <div className="orbit-panel__content">
                 <p className="orbit-panel__label">
-                  Writing · {orbitBodyByPanel.writing}
+                  Writing
                 </p>
                 <a className="blog-mini" href="/blog/parallel-betting">
                   <span>July 2026</span>
@@ -95,7 +91,7 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
             {activePanel === "contact" ? (
               <div className="orbit-panel__content">
                 <p className="orbit-panel__label">
-                  Contact · {orbitBodyByPanel.contact}
+                  Contact
                 </p>
                 <div className="contact-mini">
                   <a href="mailto:trentconley@gmail.com">

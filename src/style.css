@@ -496,6 +496,349 @@ img {
   color: rgba(238, 230, 216, 0.7);
 }
 
+/* Mars tracker */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mars-tracker {
+  --mars-cream: #eee9df;
+  --mars-muted: rgba(238, 233, 223, 0.42);
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100svh;
+  overflow: hidden;
+  color: var(--mars-cream);
+  background:
+    radial-gradient(circle at 17% 22%, rgba(244, 229, 199, 0.52) 0 0.55px, transparent 0.9px),
+    radial-gradient(circle at 76% 18%, rgba(244, 229, 199, 0.38) 0 0.45px, transparent 0.85px),
+    radial-gradient(circle at 91% 46%, rgba(220, 180, 145, 0.4) 0 0.65px, transparent 1px),
+    radial-gradient(circle at 11% 68%, rgba(244, 229, 199, 0.3) 0 0.5px, transparent 0.9px),
+    radial-gradient(circle at 69% 77%, rgba(244, 229, 199, 0.36) 0 0.5px, transparent 0.9px),
+    radial-gradient(circle at 32% 87%, rgba(206, 141, 103, 0.34) 0 0.55px, transparent 0.9px),
+    radial-gradient(circle at 48% 42%, rgba(152, 74, 45, 0.09), transparent 34%),
+    radial-gradient(ellipse at 50% 48%, #11100f 0%, #090909 48%, #050506 100%);
+  isolation: isolate;
+}
+
+.mars-tracker::after {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.58);
+  pointer-events: none;
+  content: "";
+}
+
+.mars-tracker__mark {
+  position: absolute;
+  top: clamp(1rem, 3vw, 2rem);
+  left: clamp(1rem, 3vw, 2rem);
+  z-index: 12;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(238, 233, 223, 0.22);
+  border-radius: 50%;
+  color: rgba(238, 233, 223, 0.68);
+  font-size: 0.56rem;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.mars-tracker__mark:hover,
+.mars-tracker__mark:focus-visible {
+  border-color: var(--mars-cream);
+  color: #080808;
+  background: var(--mars-cream);
+  outline: none;
+}
+
+.mars-tracker__clock {
+  position: absolute;
+  top: clamp(1.45rem, 3vw, 2.35rem);
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: rgba(238, 233, 223, 0.34);
+  font: 0.52rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.mars-tracker__clock i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c26a43;
+  box-shadow: 0 0 8px rgba(194, 106, 67, 0.7);
+  animation: mars-clock-pulse 2.4s ease-in-out infinite;
+}
+
+.mars-tracker__readout {
+  position: absolute;
+  top: clamp(4.3rem, 8vh, 6.2rem);
+  left: 50%;
+  z-index: 5;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.mars-tracker__readout > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.mars-tracker__readout strong {
+  color: #f0eae0;
+  font-size: clamp(2.8rem, 6.4vw, 6.2rem);
+  font-weight: 300;
+  letter-spacing: -0.075em;
+  line-height: 0.9;
+  text-shadow: 0 8px 46px rgba(0, 0, 0, 0.56);
+}
+
+.mars-tracker__readout span {
+  color: var(--mars-muted);
+  font: 0.58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.11em;
+}
+
+.mars-orbit-figure {
+  position: absolute;
+  inset: clamp(8rem, 15vh, 10.5rem) clamp(1rem, 5vw, 5rem) clamp(5.2rem, 10vh, 7.5rem);
+  z-index: 2;
+  display: grid;
+  margin: 0;
+  place-items: center;
+}
+
+.mars-orbit-map {
+  width: 100%;
+  height: 100%;
+  max-width: 1080px;
+  overflow: visible;
+}
+
+.mars-orbit-map__compass {
+  fill: none;
+  stroke: rgba(238, 233, 223, 0.035);
+  stroke-dasharray: 0.004 0.065;
+  stroke-linecap: round;
+  stroke-width: 0.008;
+}
+
+.mars-orbit-map__orbit {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.mars-orbit-map__orbit--earth {
+  stroke: rgba(184, 199, 190, 0.2);
+  stroke-width: 0.85px;
+}
+
+.mars-orbit-map__orbit--mars {
+  stroke: rgba(204, 112, 70, 0.28);
+  stroke-width: 0.9px;
+}
+
+.mars-orbit-map__distance {
+  stroke: rgba(238, 233, 223, 0.19);
+  stroke-dasharray: 0.018 0.025;
+  stroke-linecap: round;
+  stroke-width: 0.006;
+}
+
+.mars-orbit-map__sun-glow {
+  fill: rgba(216, 147, 72, 0.62);
+}
+
+.mars-orbit-map__sun {
+  stroke: rgba(255, 242, 205, 0.64);
+  stroke-width: 0.004;
+}
+
+.mars-orbit-map__earth-glow {
+  fill: rgba(148, 178, 163, 0.48);
+}
+
+.mars-orbit-map__mars-glow {
+  fill: rgba(199, 87, 47, 0.54);
+}
+
+.mars-orbit-map__earth,
+.mars-orbit-map__mars {
+  stroke: rgba(255, 244, 225, 0.34);
+  stroke-width: 0.003;
+}
+
+.mars-orbit-map__locator {
+  fill: none;
+  stroke: rgba(184, 199, 190, 0.22);
+  stroke-width: 0.003;
+}
+
+.mars-orbit-map__locator--mars {
+  stroke: rgba(211, 115, 72, 0.38);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mars-locator-pulse 3.2s ease-out infinite;
+}
+
+.mars-orbit-map__label {
+  fill: rgba(210, 219, 212, 0.54);
+  font: 600 0.045px/1 Inter, "Helvetica Neue", sans-serif;
+  letter-spacing: 0.012px;
+}
+
+.mars-orbit-map__label--mars {
+  fill: rgba(226, 144, 105, 0.68);
+}
+
+.mars-tracker__metrics {
+  position: absolute;
+  bottom: clamp(1.4rem, 3vw, 2.5rem);
+  left: 50%;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(86px, 1fr));
+  width: min(420px, calc(100vw - 7rem));
+  transform: translateX(-50%);
+}
+
+.mars-tracker__metrics > div {
+  display: grid;
+  min-height: 38px;
+  padding: 0 1rem;
+  align-content: center;
+  gap: 0.28rem;
+  border-right: 1px solid rgba(238, 233, 223, 0.1);
+  text-align: center;
+}
+
+.mars-tracker__metrics > div:last-child {
+  border-right: 0;
+}
+
+.mars-tracker__metrics strong {
+  color: rgba(238, 233, 223, 0.82);
+  font: 400 0.92rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.035em;
+}
+
+.mars-tracker__metrics span {
+  color: rgba(238, 233, 223, 0.26);
+  font: 0.46rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+}
+
+.mars-tracker__method {
+  position: absolute;
+  right: clamp(1.1rem, 3vw, 2.2rem);
+  bottom: clamp(1.25rem, 3vw, 2.15rem);
+  z-index: 10;
+  color: rgba(238, 233, 223, 0.2);
+  font: 0.46rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  transition: color 180ms ease;
+}
+
+.mars-tracker__method:hover,
+.mars-tracker__method:focus-visible {
+  color: rgba(238, 233, 223, 0.7);
+  outline: none;
+}
+
+@keyframes mars-clock-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes mars-locator-pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.78);
+  }
+  72%,
+  100% {
+    opacity: 0;
+    transform: scale(1.75);
+  }
+}
+
+@media (max-width: 640px) {
+  .mars-tracker__clock {
+    top: 1.55rem;
+    left: auto;
+    right: 1.1rem;
+    transform: none;
+  }
+
+  .mars-tracker__readout {
+    top: 5rem;
+  }
+
+  .mars-tracker__readout > div {
+    display: grid;
+    gap: 0.48rem;
+  }
+
+  .mars-tracker__readout strong {
+    font-size: clamp(2.6rem, 14vw, 4.25rem);
+  }
+
+  .mars-orbit-figure {
+    inset: 9.8rem 0.65rem 7.4rem;
+  }
+
+  .mars-orbit-map__label {
+    font-size: 0.056px;
+  }
+
+  .mars-tracker__metrics {
+    bottom: 1.55rem;
+    width: calc(100vw - 2rem);
+  }
+
+  .mars-tracker__metrics > div {
+    padding-inline: 0.45rem;
+  }
+
+  .mars-tracker__method {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mars-tracker__clock i,
+  .mars-orbit-map__locator--mars {
+    animation: none;
+  }
+}
+
 /* Article */
 .article-view {
   min-height: 100vh;

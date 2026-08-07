@@ -92,13 +92,13 @@ const orbitItems: OrbitBody[] = [
 const starDiscoveries: StarDiscovery[] = [
   {
     id: "alpha-centauri",
-    name: "Alpha Centauri",
+    name: "From Peru",
     rightAscensionDegrees: 219.9021,
     declinationDegrees: -60.834,
-    distance: "4.25 light-years",
-    kind: "Triple-star system",
+    distance: "Coming soon",
+    kind: "The photograph behind this site",
     detail:
-      "Proxima b orbits in the habitable zone. Its actual habitability is unknown.",
+      "I took the Milky Way photo that inspired this site in Peru. A blog post with the picture is coming.",
     color: "#f3d6a0",
   },
   {
@@ -144,12 +144,6 @@ const starDiscoveries: StarDiscovery[] = [
     color: "#f0c27b",
   },
 ];
-
-export const orbitBodyByPanel: Record<OrbitPanel, OrbitBody["body"]> = {
-  projects: "Io",
-  writing: "Europa",
-  contact: "Ganymede",
-};
 
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 // Begin at a valid, well-separated point in the measured orbital model.
@@ -564,8 +558,8 @@ export function OrbitalField({ activePanel, onSelect }: OrbitalFieldProps) {
           type="button"
           onClick={() => onSelect(item.id)}
           aria-pressed={activePanel === item.id}
-          aria-label={`${item.label} — ${item.body}`}
-          title={`${item.body} · ${item.label}`}
+          aria-label={item.label}
+          title={item.label}
           style={{ "--moon-color": item.color } as CSSProperties}
         >
           <span className="orbit-node__dot" aria-hidden="true" />

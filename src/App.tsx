@@ -1,6 +1,7 @@
 import { ArticlePage } from "./components/ArticlePage";
 import { FactorioBlueprintPage } from "./components/FactorioBlueprintPage";
 import { HomePage } from "./components/HomePage";
+import { MarsTrackerPage } from "./components/MarsTrackerPage";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/";
@@ -11,6 +12,10 @@ export default function App() {
 
   if (path === "/projects/factorio-blueprints") {
     return <FactorioBlueprintPage />;
+  }
+
+  if (path === "/projects/mars-tracker") {
+    return <MarsTrackerPage />;
   }
 
   if (path === "/writing" || path === "/blog") {

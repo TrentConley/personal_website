@@ -1,0 +1,5 @@
+Factorio item and fluid icon artwork is copyright Wube Software.
+
+These icons were exported from the user's installed vanilla Factorio 2.0.77 data
+for use by the Factorio blueprint generator project. They are not affiliated
+with or endorsed by Wube Software.

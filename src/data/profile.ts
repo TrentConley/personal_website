@@ -9,6 +9,12 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    name: "Mars, Now",
+    summary:
+      "A live view of the real Earth–Mars geometry and Mars's apparent size in our sky.",
+    links: [{ label: "open", url: "/projects/mars-tracker" }],
+  },
+  {
     name: "Factorio Factory Foundry",
     summary:
       "A recursively planned, throughput-aware vanilla factory blueprint generator tested inside Factorio.",

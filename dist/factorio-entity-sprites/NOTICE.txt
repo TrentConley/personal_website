@@ -1,0 +1,5 @@
+Factorio entity and terrain artwork is copyright Wube Software.
+
+These static sprite frames were exported from the user's installed vanilla
+Factorio 2.0.77 data for the Factorio blueprint generator's plan preview.
+They are not affiliated with or endorsed by Wube Software.
