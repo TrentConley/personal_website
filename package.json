@@ -1,24 +1,29 @@
 {
   "name": "my-personal-website",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck:api": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --esModuleInterop --skipLibCheck api/vocabulary.ts",
+    "check": "npm run build && npm run typecheck:api"
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19",
     "fflate": "^0.8.3",
+    "openai": "^7.4.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9.10.0",
     "typescript": "^5.5.4",
-    "vite": "^5.4.11"
+    "vite": "^8.2.1"
   }
 }

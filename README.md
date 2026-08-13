@@ -35,6 +35,10 @@ npm run preview
 
 The featured essay is available directly at `/blog/parallel-betting`.
 
+The adaptive vocabulary tutor is available at `/projects/vocabulary`. It stores a learner's words and review history locally in the browser. Add `OPENAI_API_KEY` to the Vercel project's environment variables to enable semantic grading and generated examples; `OPENAI_VOCAB_MODEL` can optionally override the default model. Without a key, definitions and conservative local checks remain available.
+
+Fallback lexical definitions are provided by the [Datamuse API](https://www.datamuse.com/api/) and its Wiktionary/WordNet-derived metadata.
+
 ## Project Structure
 
 ```
@@ -45,6 +49,7 @@ src/
   components/          // Pages, orbital canvas, and shared navigation
   data/profile.ts      // Selected project metadata
 public/                // Static assets (images, article PDF, favicon)
+api/                   // Vercel serverless tutor endpoint
 ```
 
 ## Deployment

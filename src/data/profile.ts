@@ -9,6 +9,12 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    name: "Lexicon",
+    summary:
+      "An adaptive vocabulary tutor that moves words from recognition into natural use.",
+    links: [{ label: "learn", url: "/projects/vocabulary" }],
+  },
+  {
     name: "Mars, Now",
     summary:
       "A live view of the real Earth–Mars geometry and Mars's apparent size in our sky.",
