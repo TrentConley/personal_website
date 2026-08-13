@@ -3704,6 +3704,23 @@ body.factorio-preview-open {
   text-transform: uppercase;
 }
 
+.vocab-pass-goal {
+  display: inline-flex;
+  padding: 0.38rem 0.62rem;
+  align-items: baseline;
+  gap: 0.32rem;
+  border: 1px solid var(--vocab-line);
+  border-radius: 999px;
+  color: var(--vocab-muted);
+  letter-spacing: 0.08em;
+}
+
+.vocab-pass-goal b {
+  color: var(--vocab-ink);
+  font-size: 0.68rem;
+  letter-spacing: -0.02em;
+}
+
 .vocab-review__prompt {
   min-height: 220px;
 }
@@ -4078,6 +4095,149 @@ body.factorio-preview-open {
   font-size: 0.68rem;
 }
 
+.vocab-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.vocab-page:has(.vocab-import:not(.is-compact)) {
+  overflow-y: auto;
+}
+
+.vocab-kindle {
+  max-width: 850px;
+  margin-top: 1.6rem;
+  border-top: 1px solid var(--vocab-line);
+  border-bottom: 1px solid var(--vocab-line);
+}
+
+.vocab-kindle__toggle {
+  display: flex;
+  width: 100%;
+  padding: 1rem 0;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  color: var(--vocab-ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vocab-kindle__toggle:focus-visible {
+  outline: 1px solid var(--vocab-ink);
+  outline-offset: 4px;
+}
+
+.vocab-kindle__toggle > span {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.vocab-kindle__toggle small {
+  color: var(--vocab-muted);
+  font-size: 0.52rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vocab-kindle__toggle strong {
+  font: 500 0.95rem/1.2 Georgia, "Times New Roman", serif;
+}
+
+.vocab-kindle__toggle i {
+  color: var(--vocab-accent);
+  font: 400 1.25rem/1 Georgia, "Times New Roman", serif;
+}
+
+.vocab-kindle__body {
+  display: grid;
+  padding: 0.35rem 0 1.2rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.7rem 2rem;
+  animation: vocab-rise 220ms ease both;
+}
+
+.vocab-kindle__body ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 0.35rem;
+  list-style-position: inside;
+  color: var(--vocab-ink);
+  font: 400 0.84rem/1.45 Georgia, "Times New Roman", serif;
+}
+
+.vocab-kindle__body code {
+  padding: 0.12rem 0.3rem;
+  border-radius: 2px;
+  background: rgba(28, 26, 23, 0.06);
+  font: 500 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.vocab-kindle__body > p {
+  margin: 0;
+  color: var(--vocab-muted);
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.vocab-kindle__body kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 1px;
+  padding: 0 3px;
+  place-items: center;
+  border: 1px solid var(--vocab-line);
+  border-radius: 3px;
+  color: var(--vocab-ink);
+  background: rgba(255, 255, 255, 0.28);
+  font: 500 0.56rem/1 Inter, sans-serif;
+}
+
+.vocab-kindle__file {
+  min-width: 160px;
+  padding: 0.78rem 1rem;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border: 1px solid var(--vocab-ink);
+  border-radius: 999px;
+  color: var(--vocab-ink);
+  background: transparent;
+  font-size: 0.61rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.vocab-kindle__file:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.vocab-kindle__body > small,
+.vocab-kindle__status {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--vocab-muted);
+  font-size: 0.57rem;
+  line-height: 1.45;
+}
+
+.vocab-kindle__status {
+  color: var(--vocab-accent);
+}
+
 .vocab-method {
   display: grid;
   max-width: 850px;
@@ -4172,6 +4332,68 @@ body.factorio-preview-open {
   letter-spacing: -0.055em;
 }
 
+.vocab-library__progress {
+  display: grid;
+  margin-top: 1.6rem;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.vocab-library__progress > span {
+  height: 2px;
+  overflow: hidden;
+  background: var(--vocab-line);
+}
+
+.vocab-library__progress i {
+  display: block;
+  height: 100%;
+  background: var(--vocab-accent);
+  transition: width 300ms ease;
+}
+
+.vocab-library__progress strong {
+  font: 500 0.66rem/1 Inter, sans-serif;
+}
+
+.vocab-stage-summary {
+  display: grid;
+  margin-top: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--vocab-line);
+  border-bottom: 1px solid var(--vocab-line);
+}
+
+.vocab-stage-summary > div {
+  display: grid;
+  padding: 0.8rem 0.4rem;
+  gap: 0.16rem;
+}
+
+.vocab-stage-summary > div:not(:last-child) {
+  border-right: 1px solid var(--vocab-line);
+}
+
+.vocab-stage-summary strong {
+  font: 400 1.35rem/1 Georgia, "Times New Roman", serif;
+}
+
+.vocab-stage-summary span {
+  overflow: hidden;
+  font-size: 0.5rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+.vocab-stage-summary small {
+  color: var(--vocab-muted);
+  font-size: 0.48rem;
+  letter-spacing: 0.03em;
+}
+
 .vocab-icon-button {
   display: grid;
   width: 38px;
@@ -4188,7 +4410,7 @@ body.factorio-preview-open {
 .vocab-add-button {
   display: flex;
   width: 100%;
-  margin: 2rem 0;
+  margin: 1.4rem 0 2rem;
   padding: 0.9rem 0;
   align-items: center;
   gap: 0.8rem;
@@ -4424,6 +4646,23 @@ body.factorio-preview-open {
 
   .vocab-import__action .vocab-primary {
     width: 100%;
+  }
+
+  .vocab-kindle__body {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .vocab-kindle__file {
+    width: 100%;
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .vocab-kindle__body > small,
+  .vocab-kindle__status {
+    grid-column: 1;
   }
 
   .vocab-method {

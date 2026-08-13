@@ -13,7 +13,12 @@ import {
   sampleWords,
 } from "../vocabulary/tutor";
 import {
+  kindleCloze,
+  readKindleVocabulary,
+} from "../vocabulary/kindle";
+import {
   stageMeta,
+  type EnrichedWord,
   type TutorGrade,
   type VocabularyCard,
   type VocabularyStage,
@@ -50,10 +55,60 @@ function loadState(): VocabularyState {
 }
 
 function parseWords(value: string) {
-  return [...new Set(value.split(/[\n,;]+/).map((word) => word.trim()).filter(Boolean))].slice(
-    0,
-    24,
-  );
+  return [...new Set(value.split(/[\n,;]+/).map((word) => word.trim()).filter(Boolean))];
+}
+
+function learningProgress(cards: VocabularyCard[]) {
+  if (!cards.length) return 0;
+  const progress = cards.reduce((total, card) => {
+    const stage = stageMeta[card.stage].index;
+    const partial = card.stage === "context" || card.stage === "expression"
+      ? Math.min(0.5, card.stagePasses * 0.5)
+      : 0;
+    return total + Math.min(3, stage + partial);
+  }, 0);
+  return Math.round((progress / (cards.length * 3)) * 100);
+}
+
+function cardTiming(card: VocabularyCard, now: number) {
+  if (card.dueAt <= now) return `${stageMeta[card.stage].label} · ready now`;
+  const due = formatDue(card.dueAt, now);
+  if (card.stage === "expression" && card.stagePasses === 0) {
+    return `Expression · unlocks in ${due}`;
+  }
+  if (card.stage === "context" && card.stagePasses === 1) {
+    return `Context 1/2 · next in ${due}`;
+  }
+  if (card.stage === "expression" && card.stagePasses === 1) {
+    return `Expression 1/2 · next in ${due}`;
+  }
+  if (card.stage === "mastered") return `Retained · check in ${due}`;
+  return `${stageMeta[card.stage].label} · next in ${due}`;
+}
+
+function restMessage(card: VocabularyCard, now: number) {
+  const due = formatDue(card.dueAt, now);
+  if (card.stage === "expression" && card.stagePasses === 0) {
+    return `Expression for “${card.term}” unlocks in ${due}.`;
+  }
+  if (card.stage === "context" && card.stagePasses === 1) {
+    return `One more context recall for “${card.term}” arrives in ${due}.`;
+  }
+  return `“${card.term}” returns in ${due}.`;
+}
+
+async function enrichInBatches(
+  terms: string[],
+  onProgress: (completed: number, total: number) => void,
+) {
+  const prepared: EnrichedWord[] = [];
+  const batchSize = 20;
+  for (let index = 0; index < terms.length; index += batchSize) {
+    const batch = terms.slice(index, index + batchSize);
+    prepared.push(...await enrichWords(batch));
+    onProgress(Math.min(index + batch.length, terms.length), terms.length);
+  }
+  return prepared;
 }
 
 function Wordmark() {
@@ -110,7 +165,11 @@ function ImportPanel({ compact = false, existing, onImport, onClose }: ImportPan
   const [value, setValue] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [kindleOpen, setKindleOpen] = useState(false);
+  const [kindleLoading, setKindleLoading] = useState(false);
+  const [kindleStatus, setKindleStatus] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const kindleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (compact) inputRef.current?.focus();
@@ -127,7 +186,9 @@ function ImportPanel({ compact = false, existing, onImport, onClose }: ImportPan
 
     setLoading(true);
     setStatus("");
-    const words = await enrichWords(requested);
+    const words = await enrichInBatches(requested, (completed, total) => {
+      if (total > 20) setStatus(`Preparing ${completed} of ${total}…`);
+    });
     setLoading(false);
     if (!words.length) {
       setStatus("I couldn't find those words. Check the spelling and try again.");
@@ -139,6 +200,56 @@ function ImportPanel({ compact = false, existing, onImport, onClose }: ImportPan
       setStatus(`${words.length} added. ${requested.length - words.length} could not be found.`);
     } else if (compact) {
       onClose?.();
+    }
+  }
+
+  async function importKindle(file: File | undefined) {
+    if (!file || kindleLoading || loading) return;
+    setKindleLoading(true);
+    setKindleStatus("Reading vocab.db…");
+
+    try {
+      const imported = await readKindleVocabulary(file);
+      const known = new Set(existing.map((card) => card.term.toLowerCase()));
+      const entries = imported.entries.filter((entry) => !known.has(entry.term));
+      if (!entries.length) {
+        setKindleStatus(
+          imported.entries.length
+            ? "Those Kindle words are already here."
+            : "No English vocabulary words were found.",
+        );
+        return;
+      }
+
+      const enriched = await enrichInBatches(
+        entries.map((entry) => entry.term),
+        (completed, total) => setKindleStatus(`Preparing ${completed} of ${total}…`),
+      );
+      const source = new Map(entries.map((entry) => [entry.term, entry] as const));
+      const cards = enriched.map((word, index) => {
+        const card = createCard(word, Date.now() + index);
+        const original = source.get(word.term.toLowerCase());
+        const cloze = original ? kindleCloze(original) : null;
+        return cloze
+          ? { ...card, clozes: [cloze, ...card.clozes].slice(0, 3) }
+          : card;
+      });
+      if (!cards.length) {
+        setKindleStatus("I found the words but could not prepare their definitions.");
+        return;
+      }
+
+      onImport(cards);
+      const ignored = imported.skippedNonEnglish + imported.duplicates;
+      setKindleStatus(
+        `${cards.length} imported${ignored ? ` · ${ignored} duplicates or non-English skipped` : ""}.`,
+      );
+      if (compact) onClose?.();
+    } catch (error) {
+      setKindleStatus(error instanceof Error ? error.message : "I could not read that file.");
+    } finally {
+      setKindleLoading(false);
+      if (kindleInputRef.current) kindleInputRef.current.value = "";
     }
   }
 
@@ -203,11 +314,54 @@ function ImportPanel({ compact = false, existing, onImport, onClose }: ImportPan
       )}
 
       <div className="vocab-import__action">
-        <button className="vocab-primary" type="button" onClick={submit} disabled={loading}>
+        <button className="vocab-primary" type="button" onClick={submit} disabled={loading || kindleLoading}>
           <span>{loading ? "Preparing your words…" : "Begin learning"}</span>
           {!loading && <ArrowIcon />}
         </button>
         {status && <p role="status">{status}</p>}
+      </div>
+
+      <div className={`vocab-kindle${kindleOpen ? " is-open" : ""}`}>
+        <button
+          className="vocab-kindle__toggle"
+          type="button"
+          onClick={() => setKindleOpen((open) => !open)}
+          aria-expanded={kindleOpen}
+        >
+          <span>
+            <small>Kindle Paperwhite</small>
+            <strong>Import Vocabulary Builder</strong>
+          </span>
+          <i aria-hidden="true">{kindleOpen ? "−" : "+"}</i>
+        </button>
+        {kindleOpen && (
+          <div className="vocab-kindle__body">
+            <ol>
+              <li>Connect your Kindle by USB.</li>
+              <li>Choose <code>system/vocabulary/vocab.db</code>.</li>
+            </ol>
+            <p>On Mac, press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>.</kbd> if the system folder is hidden.</p>
+            <input
+              ref={kindleInputRef}
+              className="vocab-visually-hidden"
+              type="file"
+              accept=".db,application/x-sqlite3,application/vnd.sqlite3"
+              onChange={(event) => importKindle(event.target.files?.[0])}
+            />
+            <button
+              className="vocab-kindle__file"
+              type="button"
+              onClick={() => kindleInputRef.current?.click()}
+              disabled={kindleLoading || loading}
+            >
+              {kindleLoading ? kindleStatus || "Reading…" : "Choose vocab.db"}
+            </button>
+            {!kindleLoading && kindleStatus && <p className="vocab-kindle__status" role="status">{kindleStatus}</p>}
+            <small>
+              The database stays in your browser. Some newer Kindles do not expose this file over USB.
+            </small>
+          </div>
+        )}
       </div>
 
       {!compact && (
@@ -291,7 +445,9 @@ function ReviewCard({
         <div className="vocab-feedback__header">
           <ScoreDial score={result.score} />
           <div>
-            <span className="vocab-eyebrow">{passed ? "That holds" : result.verdict === "close" ? "Nearly there" : "Not yet"}</span>
+            <span className="vocab-eyebrow">
+              {passed ? "That holds" : result.verdict === "close" ? "Nearly there" : "Not yet"} · goal {threshold}
+            </span>
             <h2>{card.term}</h2>
           </div>
         </div>
@@ -328,7 +484,7 @@ function ReviewCard({
     <article className="vocab-review">
       <div className="vocab-review__meta">
         <span>{meta.short} / {meta.label}</span>
-        <span>{stage === "meaning" ? "70" : "80"}% to pass</span>
+        <span className="vocab-pass-goal"><b>≥ {threshold}</b> to advance</span>
       </div>
 
       <div className="vocab-review__prompt">
@@ -398,6 +554,14 @@ function Library({
   onAdd: () => void;
   onRemove: (id: string) => void;
 }) {
+  const progress = learningProgress(cards);
+  const counts = Object.fromEntries(
+    orderedStages.map((stage) => [
+      stage,
+      cards.filter((card) => card.stage === stage).length,
+    ]),
+  ) as Record<VocabularyStage, number>;
+
   return (
     <div className="vocab-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="vocab-library" aria-label="Word library">
@@ -407,6 +571,25 @@ function Library({
             <h2>{cards.length} {cards.length === 1 ? "word" : "words"}</h2>
           </div>
           <button className="vocab-icon-button" type="button" onClick={onClose} aria-label="Close library">×</button>
+        </div>
+        <div className="vocab-library__progress" aria-label={`${progress}% overall progress`}>
+          <span><i style={{ width: `${progress}%` }} /></span>
+          <strong>{progress}%</strong>
+        </div>
+        <div className="vocab-stage-summary">
+          {orderedStages.map((stage) => (
+            <div key={stage}>
+              <strong>{counts[stage]}</strong>
+              <span>{stageMeta[stage].label}</span>
+              <small>
+                {stage === "meaning"
+                  ? "≥70"
+                  : stage === "mastered"
+                    ? "spaced"
+                    : "2 × ≥80"}
+              </small>
+            </div>
+          ))}
         </div>
         <button className="vocab-add-button" type="button" onClick={onAdd}>
           <span>+</span> Add words
@@ -422,7 +605,7 @@ function Library({
                   <div className="vocab-library__word" key={card.id}>
                     <div>
                       <strong>{card.term}</strong>
-                      <small>{card.partOfSpeech} · due {formatDue(card.dueAt, now)}</small>
+                      <small>{card.partOfSpeech} · {cardTiming(card, now)}</small>
                     </div>
                     <button type="button" onClick={() => onRemove(card.id)} aria-label={`Remove ${card.term}`}>×</button>
                   </div>
@@ -451,7 +634,7 @@ export function VocabularyPage() {
 
   const current = state.cards.find((card) => card.id === currentId) ?? null;
   const dueCount = state.cards.filter((card) => card.dueAt <= now).length;
-  const retained = state.cards.filter((card) => card.stage === "mastered").length;
+  const progress = learningProgress(state.cards);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -559,8 +742,13 @@ export function VocabularyPage() {
           </div>
         </div>
         {state.cards.length > 0 && (
-          <button className="vocab-library-button" type="button" onClick={() => setLibraryOpen(true)}>
-            <span>{dueCount ? `${dueCount} due` : `${retained} retained`}</span>
+          <button
+            className="vocab-library-button"
+            type="button"
+            onClick={() => setLibraryOpen(true)}
+            aria-label="Open progress and word list"
+          >
+            <span>{dueCount ? `${dueCount} due` : `${progress}% progress`}</span>
             <i aria-hidden="true">{state.cards.length}</i>
           </button>
         )}
@@ -594,7 +782,7 @@ export function VocabularyPage() {
               <div className="vocab-rest">
                 <span className="vocab-eyebrow">Nothing due</span>
                 <h1>Let it settle.</h1>
-                <p>Your next word returns in {formatDue(current.dueAt, now)}.</p>
+                <p>{restMessage(current, now)}</p>
                 <button className="vocab-secondary" type="button" onClick={() => setStudyEarly(true)}>
                   Review early
                 </button>
