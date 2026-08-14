@@ -4183,6 +4183,17 @@ body.factorio-preview-open {
   font: 500 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.vocab-kindle__body a {
+  color: inherit;
+  text-decoration-color: var(--vocab-accent);
+  text-underline-offset: 0.18em;
+}
+
+.vocab-kindle__body a:hover,
+.vocab-kindle__body a:focus-visible {
+  color: var(--vocab-accent);
+}
+
 .vocab-kindle__body > p {
   margin: 0;
   color: var(--vocab-muted);

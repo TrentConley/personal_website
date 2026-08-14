@@ -337,10 +337,18 @@ function ImportPanel({ compact = false, existing, onImport, onClose }: ImportPan
         {kindleOpen && (
           <div className="vocab-kindle__body">
             <ol>
-              <li>Connect your Kindle by USB.</li>
-              <li>Choose <code>system/vocabulary/vocab.db</code>.</li>
+              <li>
+                Open <a href="https://www.amazon.com/ConnectMyKindle" target="_blank" rel="noreferrer">amazon.com/ConnectMyKindle</a> and install or open Send to Kindle.
+              </li>
+              <li>Connect your Kindle by USB, then choose <strong>Open USB File Manager</strong>.</li>
+              <li>Drag <code>system/vocabulary/vocab.db</code> onto your Desktop.</li>
+              <li>Choose that copy below.</li>
             </ol>
-            <p>On Mac, press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>.</kbd> if the system folder is hidden.</p>
+            <p>
+              Newer Kindles do not appear in Finder. If Amazon&apos;s file manager does not show the
+              <code> system</code> folder, this import is not available for that device on Mac—paste your words above instead.
+            </p>
+            <p>If the device is not detected, choose <strong>Connect device</strong> and reconnect the cable.</p>
             <input
               ref={kindleInputRef}
               className="vocab-visually-hidden"
