@@ -61,27 +61,89 @@ interface RackPlacement {
   y: number;
 }
 
+interface PlacementOccupancy {
+  parent?: PlacementOccupancy;
+  rack: MachineRack;
+  x: number;
+  y: number;
+}
+
 interface PlacementState {
   placements: Map<string, RackPlacement>;
-  occupied: Set<string>;
+  occupied: PlacementOccupancy;
   minimumX: number;
   maximumX: number;
   minimumY: number;
   maximumY: number;
+  wireByConnection: number[];
+  boundaryTapCount: number;
+  boundaryTapMinimumX?: number;
+  boundaryTapMaximumX?: number;
   score: number;
 }
 
-function rackInputRails(rack: MachineRack, material?: string): Rail[] {
-  if (material !== undefined) {
-    const primary = rack.inputs.get(material);
-    return [...(primary ? [primary] : []), ...(rack.additionalInputs.get(material) ?? [])];
+/**
+ * Exact, allocation-light integer key for a Factorio tile. Coordinates in a
+ * generated factory are many orders of magnitude inside the signed 21-bit X
+ * range, so packing X beside the unsigned 32-bit representation of Y remains
+ * an exact JavaScript integer and avoids a short-lived string per probe.
+ */
+function placementTileKey(x: number, y: number): number {
+  return x * 0x100000000 + (y >>> 0);
+}
+
+function rootPlacementOccupancy(rack: MachineRack, x: number, y: number): PlacementOccupancy {
+  return { rack, x, y };
+}
+
+function extendPlacementOccupancy(
+  parent: PlacementOccupancy,
+  rack: MachineRack,
+  x: number,
+  y: number,
+): PlacementOccupancy {
+  return { parent, rack, x, y };
+}
+
+interface RackRailIndex {
+  inputs: Rail[];
+  outputs: Rail[];
+  inputsByMaterial: Map<string, Rail[]>;
+  outputsByMaterial: Map<string, Rail[]>;
+}
+
+const rackRailIndexCache = new WeakMap<MachineRack, RackRailIndex>();
+
+function rackRailIndex(rack: MachineRack): RackRailIndex {
+  const cached = rackRailIndexCache.get(rack);
+  if (cached) return cached;
+  const inputs = [...rack.inputs.values(), ...[...rack.additionalInputs.values()].flat()];
+  const outputs = [rack.output, ...rack.additionalOutputs];
+  const inputsByMaterial = new Map<string, Rail[]>();
+  const outputsByMaterial = new Map<string, Rail[]>();
+  for (const rail of inputs) {
+    const material = inputsByMaterial.get(rail.material) ?? [];
+    material.push(rail);
+    inputsByMaterial.set(rail.material, material);
   }
-  return [...rack.inputs.values(), ...[...rack.additionalInputs.values()].flat()];
+  for (const rail of outputs) {
+    const material = outputsByMaterial.get(rail.material) ?? [];
+    material.push(rail);
+    outputsByMaterial.set(rail.material, material);
+  }
+  const index = { inputs, outputs, inputsByMaterial, outputsByMaterial };
+  rackRailIndexCache.set(rack, index);
+  return index;
+}
+
+function rackInputRails(rack: MachineRack, material?: string): Rail[] {
+  const index = rackRailIndex(rack);
+  return material === undefined ? index.inputs : index.inputsByMaterial.get(material) ?? [];
 }
 
 function rackOutputRails(rack: MachineRack, material?: string): Rail[] {
-  const rails = [rack.output, ...rack.additionalOutputs];
-  return material === undefined ? rails : rails.filter((rail) => rail.material === material);
+  const index = rackRailIndex(rack);
+  return material === undefined ? index.outputs : index.outputsByMaterial.get(material) ?? [];
 }
 
 export interface GlobalSynthesisMetrics {
@@ -144,29 +206,34 @@ function draftHalfSize(draft: Draft): Tile {
   return { x: 0.32, y: 0.32 };
 }
 
+const occupiedDraftTilesCache = new WeakMap<Draft, Tile[]>();
+
 function occupiedDraftTiles(draft: Draft): Tile[] {
+  const cached = occupiedDraftTilesCache.get(draft);
+  if (cached) return cached;
   const center = floorPosition(draft.position);
+  let result: Tile[];
   if (["assembling-machine-3", "electric-furnace", "chemical-plant"].includes(draft.name)) {
     const tiles: Tile[] = [];
     for (let y = center.y - 1; y <= center.y + 1; y += 1) {
       for (let x = center.x - 1; x <= center.x + 1; x += 1) tiles.push({ x, y });
     }
-    return tiles;
-  }
-  if (draft.name === "substation") {
-    return [center, { x: center.x + 1, y: center.y }, { x: center.x, y: center.y + 1 }, { x: center.x + 1, y: center.y + 1 }];
-  }
-  if (draft.name === "pump") {
-    return draft.direction === 0 || draft.direction === 8
+    result = tiles;
+  } else if (draft.name === "substation") {
+    result = [center, { x: center.x + 1, y: center.y }, { x: center.x, y: center.y + 1 }, { x: center.x + 1, y: center.y + 1 }];
+  } else if (draft.name === "pump") {
+    result = draft.direction === 0 || draft.direction === 8
       ? [{ x: center.x, y: center.y - 1 }, center]
       : [{ x: center.x - 1, y: center.y }, center];
-  }
-  if (draft.name.includes("splitter")) {
-    return draft.direction === 0 || draft.direction === 8
+  } else if (draft.name.includes("splitter")) {
+    result = draft.direction === 0 || draft.direction === 8
       ? [{ x: center.x - 1, y: center.y }, center]
       : [{ x: center.x, y: center.y - 1 }, center];
+  } else {
+    result = [center];
   }
-  return [center];
+  occupiedDraftTilesCache.set(draft, result);
+  return result;
 }
 
 function addHorizontalRail(
@@ -2634,6 +2701,19 @@ function translatedRail(rail: Rail, placement: RackPlacement): Rail {
   };
 }
 
+const rackPlacementTilesCache = new WeakMap<MachineRack, Tile[]>();
+
+interface RackPlacementIndex {
+  tiles: Tile[];
+  keys: Set<number>;
+  minimumX: number;
+  maximumX: number;
+  minimumY: number;
+  maximumY: number;
+}
+
+const rackPlacementIndexCache = new WeakMap<MachineRack, RackPlacementIndex>();
+
 /**
  * Machine racks expose directional transport terminals. The tile immediately
  * before an input and after an output is not occupied by the rack itself, but
@@ -2642,6 +2722,8 @@ function translatedRail(rail: Rail, placement: RackPlacement): Rail {
  * create a compact-looking but unroutable packing.
  */
 function rackPlacementTiles(rack: MachineRack): Tile[] {
+  const cached = rackPlacementTilesCache.get(rack);
+  if (cached) return cached;
   const tiles = new Map(rack.occupied.map((tile) => [`${tile.x},${tile.y}`, tile]));
   for (const rail of rackInputRails(rack)) {
     const vector = directionVector(rail.direction);
@@ -2665,15 +2747,56 @@ function rackPlacementTiles(rack: MachineRack): Tile[] {
       tiles.set(`${tile.x},${tile.y}`, tile);
     }
   }
-  return [...tiles.values()];
+  const result = [...tiles.values()];
+  rackPlacementTilesCache.set(rack, result);
+  return result;
+}
+
+function rackPlacementIndex(rack: MachineRack): RackPlacementIndex {
+  const cached = rackPlacementIndexCache.get(rack);
+  if (cached) return cached;
+  const tiles = rackPlacementTiles(rack);
+  const result = {
+    tiles,
+    keys: new Set(tiles.map((tile) => placementTileKey(tile.x, tile.y))),
+    minimumX: Math.min(...tiles.map((tile) => tile.x)),
+    maximumX: Math.max(...tiles.map((tile) => tile.x)),
+    minimumY: Math.min(...tiles.map((tile) => tile.y)),
+    maximumY: Math.max(...tiles.map((tile) => tile.y)),
+  };
+  rackPlacementIndexCache.set(rack, result);
+  return result;
 }
 
 function placementCollides(state: PlacementState, rack: MachineRack, x: number, y: number): boolean {
-  return rackPlacementTiles(rack).some((tile) => state.occupied.has(`${tile.x + x},${tile.y + y}`));
+  const incoming = rackPlacementIndex(rack);
+  for (let layer: PlacementOccupancy | undefined = state.occupied; layer; layer = layer.parent) {
+    const placed = rackPlacementIndex(layer.rack);
+    if (incoming.maximumX + x < placed.minimumX + layer.x ||
+      incoming.minimumX + x > placed.maximumX + layer.x ||
+      incoming.maximumY + y < placed.minimumY + layer.y ||
+      incoming.minimumY + y > placed.maximumY + layer.y) continue;
+    if (incoming.tiles.length <= placed.tiles.length) {
+      const relativeX = x - layer.x;
+      const relativeY = y - layer.y;
+      if (incoming.tiles.some((tile) =>
+        placed.keys.has(placementTileKey(tile.x + relativeX, tile.y + relativeY)))) return true;
+    } else {
+      const relativeX = layer.x - x;
+      const relativeY = layer.y - y;
+      if (placed.tiles.some((tile) =>
+        incoming.keys.has(placementTileKey(tile.x + relativeX, tile.y + relativeY)))) return true;
+    }
+  }
+  return false;
 }
 
+const rackTopologySignatureCache = new WeakMap<MachineRack, string>();
+
 function rackTopologySignature(rack: MachineRack): string {
-  return rack.drafts
+  const cached = rackTopologySignatureCache.get(rack);
+  if (cached) return cached;
+  const signature = rack.drafts
     .map((draft) => {
       const tile = floorPosition(draft.position);
       return `${draft.role}:${draft.name}:${draft.material ?? ""}:${tile.x},${tile.y}:` +
@@ -2681,6 +2804,8 @@ function rackTopologySignature(rack: MachineRack): string {
     })
     .sort()
     .join("|");
+  rackTopologySignatureCache.set(rack, signature);
+  return signature;
 }
 
 function materialConnections(
@@ -2698,55 +2823,83 @@ function materialConnections(
   })));
 }
 
-function placementObjective(
-  state: Omit<PlacementState, "score">,
-  connections: ReturnType<typeof materialConnections>,
+function placementConnectionWire(
+  placements: ReadonlyMap<string, RackPlacement>,
+  edge: ReturnType<typeof materialConnections>[number],
 ): number {
+  if (!edge.producer) return 0;
+  const producer = placements.get(edge.producer);
+  const consumer = placements.get(edge.consumer);
+  if (!producer || !consumer) return 0;
+  const outputs = rackOutputRails(producer.rack, edge.material)
+    .map((rail) => translatedRail(rail, producer));
+  const inputs = rackInputRails(consumer.rack, edge.material)
+    .map((rail) => translatedRail(rail, consumer));
+  if (inputs.length === 0) return 0;
+  const matchedInputs = outputs.length === inputs.length
+    ? assignRailsToSources(outputs.map((rail) => ({ point: rail.end, direction: rail.direction })), inputs)
+    : inputs;
+  const channelWire = outputs.length === matchedInputs.length
+    ? outputs.reduce((sum, output, index) => sum +
+      Math.abs(output.end.x - matchedInputs[index].start.x) +
+      Math.abs(output.end.y - matchedInputs[index].start.y), 0)
+    : outputs.reduce((sum, output) => sum + Math.min(...matchedInputs.map((input) =>
+      Math.abs(output.end.x - input.start.x) + Math.abs(output.end.y - input.start.y))), 0);
+  return channelWire * Math.max(0.25, Math.sqrt(edge.rate));
+}
+
+function placementScore(state: Omit<PlacementState, "score">): number {
   const width = state.maximumX - state.minimumX + 1;
   const height = state.maximumY - state.minimumY + 1;
-  let wire = 0;
-  for (const edge of connections) {
-    if (!edge.producer) continue;
-    const producer = state.placements.get(edge.producer);
-    const consumer = state.placements.get(edge.consumer);
-    if (!producer || !consumer) continue;
-    const outputs = rackOutputRails(producer.rack, edge.material)
-      .map((rail) => translatedRail(rail, producer));
-    const inputs = rackInputRails(consumer.rack, edge.material)
-      .map((rail) => translatedRail(rail, consumer));
-    if (inputs.length === 0) continue;
-    const matchedInputs = outputs.length === inputs.length
-      ? assignRailsToSources(outputs.map((rail) => ({ point: rail.end, direction: rail.direction })), inputs)
-      : inputs;
-    const channelWire = outputs.length === matchedInputs.length
-      ? outputs.reduce((sum, output, index) => sum +
-        Math.abs(output.end.x - matchedInputs[index].start.x) +
-        Math.abs(output.end.y - matchedInputs[index].start.y), 0)
-      : outputs.reduce((sum, output) => sum + Math.min(...matchedInputs.map((input) =>
-        Math.abs(output.end.x - input.start.x) + Math.abs(output.end.y - input.start.y))), 0);
-    wire += channelWire * Math.max(0.25, Math.sqrt(edge.rate));
-  }
-  const inputTapXs: number[] = [];
-  for (const input of planBoundaryNames(connections)) {
-    for (const placement of state.placements.values()) {
-      const rail = placement.rack.inputs.get(input);
-      if (rail) inputTapXs.push(translatedRail(rail, placement).start.x);
-    }
-  }
-  const boundarySpread = inputTapXs.length > 1 ? Math.max(...inputTapXs) - Math.min(...inputTapXs) : 0;
+  const wire = state.wireByConnection.reduce((sum, contribution) => sum + contribution, 0);
+  const boundarySpread = state.boundaryTapCount > 1
+    ? state.boundaryTapMaximumX! - state.boundaryTapMinimumX!
+    : 0;
   return width * height * 100 + Math.max(width, height) * 80 + wire * 90 + boundarySpread * 60;
 }
 
-function planBoundaryNames(connections: ReturnType<typeof materialConnections>): Set<string> {
-  return new Set(connections.filter((edge) => edge.producer === undefined).map((edge) => edge.material));
+function initialPlacementAnalytics(
+  rack: MachineRack,
+  x: number,
+  connections: ReturnType<typeof materialConnections>,
+): Pick<PlacementState, "wireByConnection" | "boundaryTapCount" |
+  "boundaryTapMinimumX" | "boundaryTapMaximumX"> {
+  const tapXs = connections.flatMap((edge) => {
+    if (edge.producer !== undefined || edge.consumer !== rack.planned.material) return [];
+    const rail = rack.inputs.get(edge.material);
+    return rail ? [rail.start.x + x] : [];
+  });
+  return {
+    wireByConnection: connections.map(() => 0),
+    boundaryTapCount: tapXs.length,
+    boundaryTapMinimumX: tapXs.length > 0 ? Math.min(...tapXs) : undefined,
+    boundaryTapMaximumX: tapXs.length > 0 ? Math.max(...tapXs) : undefined,
+  };
 }
 
 function addPlacement(state: PlacementState, rack: MachineRack, x: number, y: number,
   connections: ReturnType<typeof materialConnections>): PlacementState {
   const placements = new Map(state.placements);
   placements.set(rack.planned.material, { rack, x, y });
-  const occupied = new Set(state.occupied);
-  rackPlacementTiles(rack).forEach((tile) => occupied.add(`${tile.x + x},${tile.y + y}`));
+  const occupied = extendPlacementOccupancy(state.occupied, rack, x, y);
+  const wireByConnection = state.wireByConnection.slice();
+  connections.forEach((edge, index) => {
+    if (edge.producer === rack.planned.material || edge.consumer === rack.planned.material) {
+      wireByConnection[index] = placementConnectionWire(placements, edge);
+    }
+  });
+  let boundaryTapCount = state.boundaryTapCount;
+  let boundaryTapMinimumX = state.boundaryTapMinimumX;
+  let boundaryTapMaximumX = state.boundaryTapMaximumX;
+  for (const edge of connections) {
+    if (edge.producer !== undefined || edge.consumer !== rack.planned.material) continue;
+    const rail = rack.inputs.get(edge.material);
+    if (!rail) continue;
+    const tapX = rail.start.x + x;
+    boundaryTapCount += 1;
+    boundaryTapMinimumX = boundaryTapMinimumX === undefined ? tapX : Math.min(boundaryTapMinimumX, tapX);
+    boundaryTapMaximumX = boundaryTapMaximumX === undefined ? tapX : Math.max(boundaryTapMaximumX, tapX);
+  }
   const next = {
     placements,
     occupied,
@@ -2754,8 +2907,12 @@ function addPlacement(state: PlacementState, rack: MachineRack, x: number, y: nu
     maximumX: Math.max(state.maximumX, rack.maximumX + x),
     minimumY: Math.min(state.minimumY, rack.minimumY + y),
     maximumY: Math.max(state.maximumY, rack.maximumY + y),
+    wireByConnection,
+    boundaryTapCount,
+    boundaryTapMinimumX,
+    boundaryTapMaximumX,
   };
-  return { ...next, score: placementObjective(next, connections) };
+  return { ...next, score: placementScore(next) };
 }
 
 function candidateTranslations(state: PlacementState, rack: MachineRack,
@@ -2887,11 +3044,12 @@ function searchPlacements(
   const recipeOrder = new Map(plan.recipes.map((planned, index) => [planned.material, index]));
   let states: PlacementState[] = variants.get(root.planned.material)!.map((rootVariant) => ({
     placements: new Map([[root.planned.material, { rack: rootVariant, x: 0, y: 0 }]]),
-    occupied: new Set(rackPlacementTiles(rootVariant).map((tile) => `${tile.x},${tile.y}`)),
+    occupied: rootPlacementOccupancy(rootVariant, 0, 0),
     minimumX: rootVariant.minimumX,
     maximumX: rootVariant.maximumX,
     minimumY: rootVariant.minimumY,
     maximumY: rootVariant.maximumY,
+    ...initialPlacementAnalytics(rootVariant, 0, connections),
     score: 0,
   }));
   for (const [rackIndex, baseRack] of order.slice(1).entries()) {
@@ -2976,12 +3134,12 @@ function searchDenseEnvelopePlacements(
       x: -root.minimumX,
       y: -root.minimumY,
     }]]),
-    occupied: new Set(rackPlacementTiles(root).map((tile) =>
-      `${tile.x - root.minimumX},${tile.y - root.minimumY}`)),
+    occupied: rootPlacementOccupancy(root, -root.minimumX, -root.minimumY),
     minimumX: 0,
     maximumX: root.maximumX - root.minimumX,
     minimumY: 0,
     maximumY: root.maximumY - root.minimumY,
+    ...initialPlacementAnalytics(root, -root.minimumX, connections),
     score: 0,
   }];
   const width = (state: PlacementState): number => state.maximumX - state.minimumX + 1;
@@ -3058,19 +3216,18 @@ function rebuildPlacementState(
   const [firstMaterial, firstPlacement] = entries[0];
   let state: PlacementState = {
     placements: new Map([[firstMaterial, firstPlacement]]),
-    occupied: new Set(rackPlacementTiles(firstPlacement.rack).map((tile) =>
-      `${tile.x + firstPlacement.x},${tile.y + firstPlacement.y}`)),
+    occupied: rootPlacementOccupancy(firstPlacement.rack, firstPlacement.x, firstPlacement.y),
     minimumX: firstPlacement.rack.minimumX + firstPlacement.x,
     maximumX: firstPlacement.rack.maximumX + firstPlacement.x,
     minimumY: firstPlacement.rack.minimumY + firstPlacement.y,
     maximumY: firstPlacement.rack.maximumY + firstPlacement.y,
+    ...initialPlacementAnalytics(firstPlacement.rack, firstPlacement.x, connections),
     score: 0,
   };
   for (const [, placement] of entries.slice(1)) {
     if (placementCollides(state, placement.rack, placement.x, placement.y)) return undefined;
     state = addPlacement(state, placement.rack, placement.x, placement.y, connections);
   }
-  state.score = placementObjective(state, connections);
   return state;
 }
 
@@ -3213,11 +3370,12 @@ function seededPlacement(
   const first = order[0];
   let state: PlacementState = {
     placements: new Map([[first.planned.material, { rack: first, x: -first.minimumX, y: -first.minimumY }]]),
-    occupied: new Set(rackPlacementTiles(first).map((tile) => `${tile.x - first.minimumX},${tile.y - first.minimumY}`)),
+    occupied: rootPlacementOccupancy(first, -first.minimumX, -first.minimumY),
     minimumX: 0,
     maximumX: first.maximumX - first.minimumX,
     minimumY: 0,
     maximumY: first.maximumY - first.minimumY,
+    ...initialPlacementAnalytics(first, -first.minimumX, connections),
     score: 0,
   };
   let cursorX = state.maximumX + 9;
@@ -3327,11 +3485,12 @@ function layeredPlacement(
   const first = placements[0];
   let state: PlacementState = {
     placements: new Map([[first.rack.planned.material, first]]),
-    occupied: new Set(rackPlacementTiles(first.rack).map((tile) => `${tile.x + first.x},${tile.y + first.y}`)),
+    occupied: rootPlacementOccupancy(first.rack, first.x, first.y),
     minimumX: first.rack.minimumX + first.x,
     maximumX: first.rack.maximumX + first.x,
     minimumY: first.rack.minimumY + first.y,
     maximumY: first.rack.maximumY + first.y,
+    ...initialPlacementAnalytics(first.rack, first.x, connections),
     score: 0,
   };
   for (const placement of placements.slice(1)) {
@@ -3349,8 +3508,74 @@ function undergroundReach(name: string): number {
   return 9;
 }
 
+interface DraftSpatialIndex {
+  length: number;
+  lastDraft?: Draft;
+  physical: Set<number>;
+  tiles: Tile[];
+  occupants: Map<number, Draft[]>;
+  directedBelts: Draft[];
+  undergroundEndpoints: Draft[];
+  tunnelTiles?: Set<string>;
+}
+
+const draftSpatialIndexCache = new WeakMap<Draft[], DraftSpatialIndex>();
+
+function addDraftToSpatialIndex(index: DraftSpatialIndex, draft: Draft): void {
+  for (const tile of occupiedDraftTiles(draft)) {
+    const key = placementTileKey(tile.x, tile.y);
+    if (!index.physical.has(key)) {
+      index.physical.add(key);
+      index.tiles.push(tile);
+    }
+    const occupants = index.occupants.get(key);
+    if (occupants) occupants.push(draft);
+    else index.occupants.set(key, [draft]);
+  }
+  if (draft.direction !== undefined && draft.undergroundType !== "input" &&
+    (draft.name.includes("belt") || draft.name.includes("splitter"))) {
+    index.directedBelts.push(draft);
+  }
+  if (draft.undergroundType !== undefined && draft.direction !== undefined) {
+    index.undergroundEndpoints.push(draft);
+  }
+}
+
+function draftSpatialIndex(drafts: Draft[]): DraftSpatialIndex {
+  let index = draftSpatialIndexCache.get(drafts);
+  const prefixIntact = index !== undefined && index.length <= drafts.length &&
+    (index.length === 0 || drafts[index.length - 1] === index.lastDraft);
+  if (!index || !prefixIntact) {
+    index = {
+      length: 0,
+      physical: new Set(),
+      tiles: [],
+      occupants: new Map(),
+      directedBelts: [],
+      undergroundEndpoints: [],
+    };
+    draftSpatialIndexCache.set(drafts, index);
+  }
+  if (index.length < drafts.length) {
+    for (let offset = index.length; offset < drafts.length; offset += 1) {
+      addDraftToSpatialIndex(index, drafts[offset]);
+    }
+    index.length = drafts.length;
+    index.lastDraft = drafts.at(-1);
+    index.tunnelTiles = undefined;
+  }
+  return index;
+}
+
+function parseTileKey(key: string): Tile {
+  const separator = key.indexOf(",");
+  return { x: Number(key.slice(0, separator)), y: Number(key.slice(separator + 1)) };
+}
+
 function existingTunnelTiles(drafts: Draft[]): Set<string> {
-  const endpoints = drafts.filter((draft) => draft.undergroundType !== undefined && draft.direction !== undefined);
+  const spatial = draftSpatialIndex(drafts);
+  if (spatial.tunnelTiles) return spatial.tunnelTiles;
+  const endpoints = spatial.undergroundEndpoints;
   const claimed = new Set<Draft>();
   const result = new Set<string>();
   for (const input of endpoints.filter((draft) => draft.undergroundType === "input")) {
@@ -3379,6 +3604,7 @@ function existingTunnelTiles(drafts: Draft[]): Set<string> {
       result.add(`${input.name}:${axis}:${fixed}:${coordinate}`);
     }
   }
+  spatial.tunnelTiles = result;
   return result;
 }
 
@@ -3419,15 +3645,13 @@ function routeBetween(
     sourceEnd.y + sourceVector.y === targetStart.y) return true;
   const start = { x: sourceEnd.x + sourceVector.x, y: sourceEnd.y + sourceVector.y };
   const goal = { x: targetStart.x - finalVector.x, y: targetStart.y - finalVector.y };
-  const physicalOccupancy = new Set<string>();
-  drafts.flatMap(occupiedDraftTiles).forEach((tile) => physicalOccupancy.add(`${tile.x},${tile.y}`));
-  const occupantsAtPoint = (point: Tile): Draft[] => drafts.filter((draft) =>
-    occupiedDraftTiles(draft).some((tile) => tile.x === point.x && tile.y === point.y));
-  const reusableBeltAt = (point: Tile, direction: CardinalDirection): boolean => drafts.some((draft) =>
+  const spatial = draftSpatialIndex(drafts);
+  const occupantsAtPoint = (point: Tile): Draft[] =>
+    spatial.occupants.get(placementTileKey(point.x, point.y)) ?? [];
+  const reusableBeltAt = (point: Tile, direction: CardinalDirection): boolean => occupantsAtPoint(point).some((draft) =>
     draft.direction === direction && draft.undergroundType === undefined &&
     draft.name.includes("belt") && !draft.name.includes("splitter") &&
-    beltMaterialCompatible(material, draft.material) && occupiedDraftTiles(draft)
-      .some((tile) => tile.x === point.x && tile.y === point.y));
+    beltMaterialCompatible(material, draft.material));
   // Same-material material trees are reusable resources, not obstacles. A
   // branch may splice into a correctly directed surface belt at either end;
   // the existing entity is retained when the new path is emitted.
@@ -3436,13 +3660,13 @@ function routeBetween(
   // belt's heading rather than the source's approach heading. This matters for
   // dense many-to-one collectors, where an earlier branch may legitimately
   // occupy a later splitter's escape tile with a perpendicular continuation.
-  const reusableStartDraft = drafts.find((draft) =>
+  const startOccupants = occupantsAtPoint(start);
+  const reusableStartDraft = startOccupants.find((draft) =>
     draft.direction !== undefined && draft.undergroundType === undefined &&
     draft.name.includes("belt") && !draft.name.includes("splitter") &&
     beltMaterialCompatible(material, draft.material) &&
-    draft.direction !== ((sourceDirection + 8) % 16) && occupiedDraftTiles(draft)
-      .some((tile) => tile.x === start.x && tile.y === start.y));
-  const reusableStart = reusableStartDraft !== undefined && occupantsAtPoint(start).every((draft) =>
+    draft.direction !== ((sourceDirection + 8) % 16));
+  const reusableStart = reusableStartDraft !== undefined && startOccupants.every((draft) =>
     draft.direction === reusableStartDraft.direction && draft.undergroundType === undefined &&
     draft.name.includes("belt") && !draft.name.includes("splitter") &&
     beltMaterialCompatible(material, draft.material));
@@ -3452,25 +3676,38 @@ function routeBetween(
     draft.direction === finalDirection && draft.undergroundType === undefined &&
     draft.name.includes("belt") && !draft.name.includes("splitter") &&
     beltMaterialCompatible(material, draft.material));
-  if (reusableStart) physicalOccupancy.delete(`${start.x},${start.y}`);
-  if (reusableGoal) physicalOccupancy.delete(`${goal.x},${goal.y}`);
-  const incompatibleIngress = new Set<string>();
-  for (const draft of drafts) {
-    if (draft.direction === undefined || draft.undergroundType === "input" ||
-      (!draft.name.includes("belt") && !draft.name.includes("splitter")) ||
-      beltMaterialCompatible(material, draft.material)) continue;
+  const startTileKey = placementTileKey(start.x, start.y);
+  const goalTileKey = placementTileKey(goal.x, goal.y);
+  const incompatibleIngress = new Set<number>();
+  const incompatibleIngressTiles: Tile[] = [];
+  for (const draft of spatial.directedBelts) {
+    if (beltMaterialCompatible(material, draft.material)) continue;
     const vector = directionVector(draft.direction);
     for (const tile of occupiedDraftTiles(draft)) {
-      incompatibleIngress.add(`${tile.x + vector.x},${tile.y + vector.y}`);
+      const ingress = { x: tile.x + vector.x, y: tile.y + vector.y };
+      const key = placementTileKey(ingress.x, ingress.y);
+      if (!incompatibleIngress.has(key)) incompatibleIngressTiles.push(ingress);
+      incompatibleIngress.add(key);
     }
   }
+  const reservedTileKeys = new Set<number>();
+  const reservedTilePoints: Tile[] = [];
+  for (const key of reservedTiles) {
+    const tile = parseTileKey(key);
+    reservedTileKeys.add(placementTileKey(tile.x, tile.y));
+    reservedTilePoints.push(tile);
+  }
+  const physicallyOccupied = (key: number): boolean => spatial.physical.has(key) &&
+    !(reusableStart && key === startTileKey) && !(reusableGoal && key === goalTileKey);
+  const occupiedAt = (x: number, y: number): boolean => {
+    const key = placementTileKey(x, y);
+    return physicallyOccupied(key) || reservedTileKeys.has(key) || incompatibleIngress.has(key);
+  };
   // Negotiated networks may have already connected this terminal while
   // routing an earlier consumer of the same material. Reusing that directed
   // path is both valid and smaller than forcing a parallel duplicate route.
   if (directedBeltPathExists(drafts, material, sourceEnd, targetStart)) return true;
-  if (physicalOccupancy.has(`${start.x},${start.y}`) || physicalOccupancy.has(`${goal.x},${goal.y}`) ||
-    reservedTiles.has(`${start.x},${start.y}`) || reservedTiles.has(`${goal.x},${goal.y}`) ||
-    incompatibleIngress.has(`${start.x},${start.y}`) || incompatibleIngress.has(`${goal.x},${goal.y}`)) {
+  if (occupiedAt(start.x, start.y) || occupiedAt(goal.x, goal.y)) {
     const occupantsAt = (point: Tile): string => drafts.filter((draft) =>
       occupiedDraftTiles(draft).some((tile) => tile.x === point.x && tile.y === point.y))
       .map((draft) => `${draft.name}/${draft.material ?? "power"}/${draft.role}@` +
@@ -3487,22 +3724,32 @@ function routeBetween(
       `${floorPosition(draft.position).x},${floorPosition(draft.position).y}/${draft.direction}`)
       .join("+") || "none";
     lastRoutingDiagnostic = `${material} blocked endpoint start=${start.x},${start.y}:` +
-      `${physicalOccupancy.has(`${start.x},${start.y}`) || reservedTiles.has(`${start.x},${start.y}`)} ` +
+      `${physicallyOccupied(startTileKey) || reservedTileKeys.has(startTileKey)} ` +
       `(${occupantsAt(start)}; ingress=${incompatibleAt(start)}) ` +
       `goal=${goal.x},${goal.y}:` +
-      `${physicalOccupancy.has(`${goal.x},${goal.y}`) || reservedTiles.has(`${goal.x},${goal.y}`)} ` +
+      `${physicallyOccupied(goalTileKey) || reservedTileKeys.has(goalTileKey)} ` +
       `(${occupantsAt(goal)}; ingress=${incompatibleAt(goal)})`;
     return false;
   }
-  const occupancy = new Set([...physicalOccupancy, ...reservedTiles, ...incompatibleIngress]);
-  const points = [...occupancy].map((key) => {
-    const [x, y] = key.split(",").map(Number);
-    return { x, y };
+  let occupancyMinimumX = Math.min(start.x, goal.x);
+  let occupancyMaximumX = Math.max(start.x, goal.x);
+  let occupancyMinimumY = Math.min(start.y, goal.y);
+  let occupancyMaximumY = Math.max(start.y, goal.y);
+  const includeInBounds = (point: Tile): void => {
+    occupancyMinimumX = Math.min(occupancyMinimumX, point.x);
+    occupancyMaximumX = Math.max(occupancyMaximumX, point.x);
+    occupancyMinimumY = Math.min(occupancyMinimumY, point.y);
+    occupancyMaximumY = Math.max(occupancyMaximumY, point.y);
+  };
+  spatial.tiles.forEach((tile) => {
+    if (physicallyOccupied(placementTileKey(tile.x, tile.y))) includeInBounds(tile);
   });
-  const minX = Math.min(start.x, goal.x, ...points.map((point) => point.x)) - padding;
-  const maxX = Math.max(start.x, goal.x, ...points.map((point) => point.x)) + padding;
-  const minY = Math.min(start.y, goal.y, ...points.map((point) => point.y)) - padding;
-  const maxY = Math.max(start.y, goal.y, ...points.map((point) => point.y)) + padding;
+  reservedTilePoints.forEach(includeInBounds);
+  incompatibleIngressTiles.forEach(includeInBounds);
+  const minX = occupancyMinimumX - padding;
+  const maxX = occupancyMaximumX + padding;
+  const minY = occupancyMinimumY - padding;
+  const maxY = occupancyMaximumY + padding;
   const undergroundName = beltName === "transport-belt" ? "underground-belt" :
     beltName === "fast-transport-belt" ? "fast-underground-belt" : "express-underground-belt";
   const tunnelTiles = existingTunnelTiles(drafts);
@@ -3572,7 +3819,7 @@ function routeBetween(
       const x = current.x + vector.x;
       const y = current.y + vector.y;
       if (x < minX || x > maxX || y < minY || y > maxY) continue;
-      if (!occupancy.has(`${x},${y}`)) {
+      if (!occupiedAt(x, y)) {
         const key = keyFor(x, y, direction, false);
         const turnCost = direction === current.heading ? 0 : 0.35;
         const cost = current.cost + 1 + turnCost;
@@ -3601,7 +3848,7 @@ function routeBetween(
           const exitX = current.x + vector.x * distance;
           const exitY = current.y + vector.y * distance;
           if (exitX < minX || exitX > maxX || exitY < minY || exitY > maxY) break;
-          if (occupancy.has(`${exitX},${exitY}`)) continue;
+          if (occupiedAt(exitX, exitY)) continue;
           const exitDistance = Math.abs(exitX - goal.x) + Math.abs(exitY - goal.y);
           const forwardDistance = Math.abs(exitX + vector.x - goal.x) + Math.abs(exitY + vector.y - goal.y);
           if (exitDistance === 1 && forwardDistance > exitDistance) continue;
@@ -3650,7 +3897,7 @@ function routeBetween(
       `${targetStart.x},${targetStart.y}; start=${start.x},${start.y}/${startHeading}; ` +
       `goal=${goal.x},${goal.y}/${finalDirection}; explored=${best.size}; ` +
       `reached=${reachedBounds.minimumX}:${reachedBounds.maximumX},` +
-      `${reachedBounds.minimumY}:${reachedBounds.maximumY}; occupancy=${occupancy.size}`;
+      `${reachedBounds.minimumY}:${reachedBounds.maximumY}; occupancy=${spatial.physical.size}`;
     return false;
   }
   const reversedPath: RoutedPoint[] = [];
@@ -3745,15 +3992,19 @@ function routePipeBetween(
   // manifold is a real connection; forcing the rail's nominal continuation
   // direction creates artificial U-turns and invalid underground endpoints.
   const goal = targetStart;
-  const compatiblePipes = new Set<string>();
-  const physical = new Set<string>();
-  const fluidKeepout = new Set<string>();
-  for (const draft of drafts) {
-    for (const tile of occupiedDraftTiles(draft)) {
-      const tileKey = `${tile.x},${tile.y}`;
+  const spatial = draftSpatialIndex(drafts);
+  const compatiblePipes = new Set<number>();
+  const physical = new Set<number>();
+  for (const tile of spatial.tiles) {
+    const tileKey = placementTileKey(tile.x, tile.y);
+    for (const draft of spatial.occupants.get(tileKey) ?? []) {
       if (draft.name === "pipe" && draft.material === material) compatiblePipes.add(tileKey);
       else physical.add(tileKey);
     }
+  }
+  const fluidKeepout = new Set<number>();
+  const fluidKeepoutPoints: Tile[] = [];
+  for (const draft of drafts) {
     if ((draft.name === "pipe" || draft.name === "pipe-to-ground") && draft.material !== material) {
       const tile = floorPosition(draft.position);
       const exposedDirections: CardinalDirection[] = draft.name === "pipe"
@@ -3761,23 +4012,26 @@ function routePipeBetween(
         : draft.direction === undefined ? [] : [draft.direction];
       exposedDirections.forEach((direction) => {
         const vector = directionVector(direction);
-        fluidKeepout.add(`${tile.x + vector.x},${tile.y + vector.y}`);
+        const point = { x: tile.x + vector.x, y: tile.y + vector.y };
+        const key = placementTileKey(point.x, point.y);
+        if (!fluidKeepout.has(key)) fluidKeepoutPoints.push(point);
+        fluidKeepout.add(key);
       });
     }
   }
-  if (physical.has(`${start.x},${start.y}`)) {
-    const describe = (point: Tile): string => drafts.filter((draft) =>
-      occupiedDraftTiles(draft).some((tile) => tile.x === point.x && tile.y === point.y))
+  if (physical.has(placementTileKey(start.x, start.y))) {
+    const describe = (point: Tile): string => (spatial.occupants.get(
+      placementTileKey(point.x, point.y)) ?? [])
       .map((draft) => `${draft.name}/${draft.material ?? "power"}`).join("+") || "free";
     lastRoutingDiagnostic = `${material} pipe endpoint blocked ${start.x},${start.y}` +
       `(${describe(start)}) -> ${goal.x},${goal.y}(${describe(goal)})`;
     return false;
   }
-  const occupancy = new Set([...physical, ...fluidKeepout, ...reservedTiles]);
-  const occupiedPoints = [...occupancy].map((key) => {
-    const [x, y] = key.split(",").map(Number);
-    return { x, y };
-  });
+  const reservedPoints = [...reservedTiles].map(parseTileKey);
+  const occupancy = new Set([...physical, ...fluidKeepout,
+    ...reservedPoints.map((tile) => placementTileKey(tile.x, tile.y))]);
+  const occupiedPoints = spatial.tiles.filter((tile) => physical.has(placementTileKey(tile.x, tile.y)))
+    .concat(fluidKeepoutPoints, reservedPoints);
   const minimumX = Math.min(start.x, goal.x, ...occupiedPoints.map((point) => point.x)) - padding;
   const maximumX = Math.max(start.x, goal.x, ...occupiedPoints.map((point) => point.x)) + padding;
   const minimumY = Math.min(start.y, goal.y, ...occupiedPoints.map((point) => point.y)) - padding;
@@ -3812,7 +4066,8 @@ function routePipeBetween(
         const output = { x: input.x + vector.x, y: input.y + vector.y };
         const before = { x: input.x - vector.x, y: input.y - vector.y };
         const after = { x: output.x + vector.x, y: output.y + vector.y };
-        if ([input, output, before, after].some((tile) => occupancy.has(`${tile.x},${tile.y}`))) continue;
+        if ([input, output, before, after].some((tile) =>
+          occupancy.has(placementTileKey(tile.x, tile.y)))) continue;
         pumpCandidates.push({ input, output });
       }
     }
@@ -3841,7 +4096,7 @@ function routePipeBetween(
         drafts.length = baseline;
         continue;
       }
-      const used = new Set(drafts.flatMap(occupiedDraftTiles).map((tile) => `${tile.x},${tile.y}`));
+      const used = draftSpatialIndex(drafts).physical;
       const pumpCenter = {
         x: (candidate.input.x + candidate.output.x) / 2,
         y: (candidate.input.y + candidate.output.y) / 2,
@@ -3854,7 +4109,7 @@ function routePipeBetween(
           { x: Math.round(pumpCenter.x + radius), y: Math.round(pumpCenter.y + offset) },
         ]))
         .find((tile) => Math.max(Math.abs(tile.x - pumpCenter.x), Math.abs(tile.y - pumpCenter.y)) <= 3.5 &&
-          !used.has(`${tile.x},${tile.y}`));
+          !used.has(placementTileKey(tile.x, tile.y)));
       if (!pole) {
         drafts.length = baseline;
         continue;
@@ -3865,19 +4120,59 @@ function routePipeBetween(
     lastRoutingDiagnostic = `${material} could not place a powered pipeline segmentation pump`;
     return false;
   }
-  const queue: Array<RoutedPoint & { cost: number; estimate: number; key: string }> = [{
+  const key = (point: Tile, heading: CardinalDirection, underground = false): string =>
+    `${point.x},${point.y},${heading},${underground ? 1 : 0}`;
+  const startKey = key(start, sourceDirection);
+  type PipeSearchNode = RoutedPoint & { cost: number; estimate: number; key: string; order: number };
+  const queue: PipeSearchNode[] = [{
     ...start,
     heading: sourceDirection,
     arrivedUnderground: false,
     cost: 0,
     estimate: Math.max(0, Math.abs(start.x - goal.x) + Math.abs(start.y - goal.y) - 1),
-    key: `${start.x},${start.y},${sourceDirection},0`,
+    key: startKey,
+    order: 0,
   }];
-  const key = (point: Tile, heading: CardinalDirection, underground = false): string =>
-    `${point.x},${point.y},${heading},${underground ? 1 : 0}`;
-  const best = new Map([[key(start, sourceDirection), 0]]);
+  let nextQueueOrder = 1;
+  const compareQueueNodes = (left: PipeSearchNode, right: PipeSearchNode): number =>
+    left.estimate - right.estimate || left.order - right.order;
+  const pushQueue = (node: Omit<PipeSearchNode, "order">): void => {
+    const ordered = { ...node, order: nextQueueOrder };
+    nextQueueOrder += 1;
+    queue.push(ordered);
+    let index = queue.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (compareQueueNodes(queue[parent], ordered) <= 0) break;
+      queue[index] = queue[parent];
+      index = parent;
+    }
+    queue[index] = ordered;
+  };
+  const popQueue = (): PipeSearchNode | undefined => {
+    if (queue.length === 0) return undefined;
+    const first = queue[0];
+    const last = queue.pop()!;
+    if (queue.length > 0) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        if (left >= queue.length) break;
+        const right = left + 1;
+        const child = right < queue.length && compareQueueNodes(queue[right], queue[left]) < 0
+          ? right
+          : left;
+        if (compareQueueNodes(queue[child], last) >= 0) break;
+        queue[index] = queue[child];
+        index = child;
+      }
+      queue[index] = last;
+    }
+    return first;
+  };
+  const best = new Map([[startKey, 0]]);
   const previous = new Map<string, string>();
-  const points = new Map<string, RoutedPoint>([[key(start, sourceDirection), {
+  const points = new Map<string, RoutedPoint>([[startKey, {
     ...start,
     heading: sourceDirection,
     arrivedUnderground: false,
@@ -3908,8 +4203,7 @@ function routePipeBetween(
   }
   let goalKey: string | undefined;
   while (queue.length > 0) {
-    queue.sort((left, right) => left.estimate - right.estimate);
-    const current = queue.shift()!;
+    const current = popQueue()!;
     if (current.cost !== best.get(current.key)) continue;
     const targetConnection = {
       x: goal.x - targetVector.x,
@@ -3933,14 +4227,14 @@ function routePipeBetween(
       const vector = directionVector(direction);
       const next = { x: current.x + vector.x, y: current.y + vector.y };
       if (next.x >= minimumX && next.x <= maximumX && next.y >= minimumY && next.y <= maximumY &&
-        !occupancy.has(`${next.x},${next.y}`)) {
+        !occupancy.has(placementTileKey(next.x, next.y))) {
         const nextKey = key(next, direction);
         const cost = current.cost + 1;
         if (cost < (best.get(nextKey) ?? Number.POSITIVE_INFINITY)) {
           best.set(nextKey, cost);
           previous.set(nextKey, current.key);
           points.set(nextKey, { ...next, heading: direction, arrivedUnderground: false });
-          queue.push({ ...next, heading: direction, arrivedUnderground: false, cost,
+          pushQueue({ ...next, heading: direction, arrivedUnderground: false, cost,
             estimate: cost + Math.max(0, Math.abs(next.x - goal.x) + Math.abs(next.y - goal.y) - 1), key: nextKey });
         }
       }
@@ -3956,7 +4250,8 @@ function routePipeBetween(
         // The far end must be a new pipe-to-ground entity. Landing a tunnel
         // directly on an existing same-fluid surface pipe looks valid to the
         // grid search but causes the renderer to omit the required endpoint.
-        if (occupancy.has(`${exit.x},${exit.y}`) || compatiblePipes.has(`${exit.x},${exit.y}`)) continue;
+        const exitTileKey = placementTileKey(exit.x, exit.y);
+        if (occupancy.has(exitTileKey) || compatiblePipes.has(exitTileKey)) continue;
         const exitDistance = Math.abs(exit.x - goal.x) + Math.abs(exit.y - goal.y);
         const forwardDistance = Math.abs(exit.x + vector.x - goal.x) + Math.abs(exit.y + vector.y - goal.y);
         if (exitDistance === 1 && forwardDistance > exitDistance) continue;
@@ -3974,7 +4269,7 @@ function routePipeBetween(
           best.set(exitKey, cost);
           previous.set(exitKey, current.key);
           points.set(exitKey, { ...exit, heading: direction, arrivedUnderground: true });
-          queue.push({ ...exit, heading: direction, arrivedUnderground: true, cost,
+          pushQueue({ ...exit, heading: direction, arrivedUnderground: true, cost,
             estimate: cost + Math.max(0, Math.abs(exit.x - goal.x) + Math.abs(exit.y - goal.y) - 1), key: exitKey });
         }
       }
@@ -4000,7 +4295,7 @@ function routePipeBetween(
     const jumpDirection = jumpToNext
       ? directionBetweenLong(point, nextPoint!)
       : jumpFromPrevious ? directionBetweenLong(previousPoint!, point) : point.heading;
-    if (compatiblePipes.has(`${point.x},${point.y}`)) return;
+    if (compatiblePipes.has(placementTileKey(point.x, point.y))) return;
     drafts.push({
       role: jumpFromPrevious || jumpToNext ? "pipe-to-ground" : "pipe",
       material,
@@ -5510,8 +5805,9 @@ function powerCoverageValid(drafts: Draft[]): boolean {
     draft.name === "assembling-machine-3" || draft.name === "electric-furnace" ||
     draft.name === "chemical-plant" || draft.name.endsWith("inserter") || draft.name === "pump");
   const supplyDistance = (pole: Draft): number => pole.name === "substation" ? 9 : 3.5;
+  const halfSizes = new Map(powered.map((entity) => [entity, draftHalfSize(entity)]));
   return poles.length > 0 && powered.every((entity) => {
-    const half = draftHalfSize(entity);
+    const half = halfSizes.get(entity)!;
     return poles.some((pole) =>
       Math.abs(entity.position.x - pole.position.x) <= supplyDistance(pole) + half.x + 1e-9 &&
       Math.abs(entity.position.y - pole.position.y) <= supplyDistance(pole) + half.y + 1e-9);
@@ -5522,8 +5818,9 @@ function ensurePowerCoverageSetCover(drafts: Draft[]): boolean {
   const powered = drafts.filter((draft) =>
     draft.name === "assembling-machine-3" || draft.name === "electric-furnace" ||
     draft.name === "chemical-plant" || draft.name.endsWith("inserter") || draft.name === "pump");
+  const halfSizes = new Map(powered.map((entity) => [entity, draftHalfSize(entity)]));
   const coveredBy = (entity: Draft, polePosition: Tile): boolean => {
-    const half = draftHalfSize(entity);
+    const half = halfSizes.get(entity)!;
     return Math.abs(entity.position.x - polePosition.x) <= 3.5 + half.x + 1e-9 &&
       Math.abs(entity.position.y - polePosition.y) <= 3.5 + half.y + 1e-9;
   };
@@ -5537,19 +5834,22 @@ function ensurePowerCoverageSetCover(drafts: Draft[]): boolean {
     pole.role === "power-pole" && coveredBy(entity, pole.position))));
   while (uncovered.size > 0) {
     const existingPoles = drafts.filter((draft) => draft.role === "power-pole");
-    const candidateByTile = new Map<string, Tile>();
+    const candidateByTile = new Map<string, { tile: Tile; coverage: Draft[] }>();
     for (const entity of uncovered) {
       const center = floorPosition(entity.position);
       for (let dx = -4; dx <= 4; dx += 1) for (let dy = -4; dy <= 4; dy += 1) {
         const tile = { x: center.x + dx, y: center.y + dy };
-        if (occupied.has(`${tile.x},${tile.y}`)) continue;
+        const key = `${tile.x},${tile.y}`;
+        if (occupied.has(key)) continue;
         const position = tilePosition(tile.x, tile.y);
-        if (coveredBy(entity, position)) candidateByTile.set(`${tile.x},${tile.y}`, tile);
+        if (!coveredBy(entity, position)) continue;
+        const candidate = candidateByTile.get(key);
+        if (candidate) candidate.coverage.push(entity);
+        else candidateByTile.set(key, { tile, coverage: [entity] });
       }
     }
-    const candidates = [...candidateByTile.values()].map((tile) => {
+    const candidates = [...candidateByTile.values()].map(({ tile, coverage }) => {
       const position = tilePosition(tile.x, tile.y);
-      const coverage = [...uncovered].filter((entity) => coveredBy(entity, position));
       const networkDistance = existingPoles.length === 0 ? 0 : Math.min(...existingPoles.map((pole) =>
         Math.hypot(position.x - pole.position.x, position.y - pole.position.y)));
       const connected = existingPoles.length === 0 || networkDistance <= 9 + 1e-9;
