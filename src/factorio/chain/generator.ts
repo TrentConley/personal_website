@@ -88,6 +88,8 @@ export function generateChainBlueprint(
     blueprintString,
     entities: layout.entities,
     inputPositions: layout.inputPositions,
+    additionalInputPositions: layout.additionalInputPositions,
+    liveValidatedExemplar: layout.liveValidatedExemplar,
     outputPosition: layout.outputPosition,
   });
   if (!validation.valid) {
@@ -105,14 +107,18 @@ export function generateChainBlueprint(
     document,
     blueprintString,
     entities: layout.entities,
-    inputPorts: plan.inputs.map((input) => ({
-      material: input.name,
-      type: input.type,
-      side: resolved.inputSide,
-      position: layout.inputPositions.get(input.name)!,
-      requiredPerSecond: input.requiredPerSecond,
-      maximumPerSecond: input.maximumPerSecond,
-    })),
+    inputPorts: plan.inputs.flatMap((input) => {
+      const positions = [layout.inputPositions.get(input.name)!,
+        ...(layout.additionalInputPositions.get(input.name) ?? [])];
+      return positions.map((position) => ({
+        material: input.name,
+        type: input.type,
+        side: resolved.inputSide,
+        position,
+        requiredPerSecond: input.requiredPerSecond / positions.length,
+        maximumPerSecond: input.maximumPerSecond,
+      }));
+    }),
     outputPort: {
       material: plan.target,
       type: plan.targetType,

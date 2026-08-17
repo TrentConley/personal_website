@@ -18,6 +18,9 @@ export interface Draft {
 export interface CanonicalLayout {
   drafts: Draft[];
   inputPositions: Map<string, { x: number; y: number }>;
+  additionalInputPositions?: Map<string, Array<{ x: number; y: number }>>;
+  /** Originated from the frozen Factorio-live-validated exemplar corpus. */
+  liveValidatedExemplar?: boolean;
   outputPosition: { x: number; y: number };
   canonicalOutputSide: Side;
   rotationQuarterTurns: number;
@@ -33,6 +36,8 @@ function rotatePosition(position: { x: number; y: number }, turns: number): { x:
 export function finalizeLayout(layout: CanonicalLayout): {
   entities: ChainPlannedEntity[];
   inputPositions: Map<string, { x: number; y: number }>;
+  additionalInputPositions: Map<string, Array<{ x: number; y: number }>>;
+  liveValidatedExemplar: boolean;
   outputPosition: { x: number; y: number };
 } {
   const entities = layout.drafts.map((draft, index): ChainPlannedEntity => ({
@@ -57,6 +62,11 @@ export function finalizeLayout(layout: CanonicalLayout): {
       [...layout.inputPositions].map(([material, position]) =>
         [material, rotatePosition(position, layout.rotationQuarterTurns)]),
     ),
+    additionalInputPositions: new Map(
+      [...(layout.additionalInputPositions ?? new Map())].map(([material, positions]) =>
+        [material, positions.map((position) => rotatePosition(position, layout.rotationQuarterTurns))]),
+    ),
+    liveValidatedExemplar: layout.liveValidatedExemplar ?? false,
     outputPosition: rotatePosition(layout.outputPosition, layout.rotationQuarterTurns),
   };
 }
