@@ -86,23 +86,30 @@ export function PhotosPage() {
         </div>
 
         <div className="photos-grid">
-          {gallery.photos.map((photo, index) => (
-            <figure className="photos-card" key={photo.id}>
-              <button
-                type="button"
-                className="photos-open"
-                onClick={() => setSelected(index)}
-                aria-label={`${gallery.labels.openPhoto}: ${photo.title}`}
-                aria-haspopup="dialog"
-              >
-                <PhotoImage photo={photo} eager={index < 2} />
-                <span className="photos-expand" aria-hidden="true">↗</span>
-              </button>
-              <figcaption>
-                <span>{photo.title}</span>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-              </figcaption>
-            </figure>
+          {gallery.photos.filter((_, index) => index % 2 === 0).map((firstPhoto, rowIndex) => (
+            <div className="photos-row" key={firstPhoto.id}>
+              {gallery.photos.slice(rowIndex * 2, rowIndex * 2 + 2).map((photo, offset) => {
+                const index = rowIndex * 2 + offset;
+                return (
+                  <figure className="photos-card" key={photo.id} style={{ flexGrow: photo.width / photo.height }}>
+                    <button
+                      type="button"
+                      className="photos-open"
+                      onClick={() => setSelected(index)}
+                      aria-label={`${gallery.labels.openPhoto}: ${photo.title}`}
+                      aria-haspopup="dialog"
+                    >
+                      <PhotoImage photo={photo} eager={index < 2} />
+                      <span className="photos-expand" aria-hidden="true">↗</span>
+                    </button>
+                    <figcaption>
+                      <span>{photo.title}</span>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
           ))}
         </div>
       </main>
