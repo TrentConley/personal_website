@@ -61,6 +61,29 @@ img {
   isolation: isolate;
 }
 
+.orbit-photos-link {
+  position: absolute;
+  top: max(24px, env(safe-area-inset-top));
+  right: 28px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(238, 230, 216, .28);
+  border-radius: 999px;
+  background: rgba(10, 8, 7, .65);
+  backdrop-filter: blur(12px);
+  color: var(--cream-soft);
+  font-size: 12px;
+}
+
+.orbit-photos-link:hover, .orbit-photos-link:focus-visible {
+  color: var(--cream);
+  border-color: var(--cream);
+}
+
 .article-nav__mark {
   display: grid;
   width: 36px;

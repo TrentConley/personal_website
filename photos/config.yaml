@@ -1,0 +1,191 @@
+{
+  "page": {
+    "title": "Photos | Trent Conley",
+    "heading": "Photos",
+    "eyebrow": "Through my lens",
+    "author": "Trent Conley",
+    "year": 2026,
+    "description": "Landscapes, passing moments, and skies after dark."
+  },
+  "labels": {
+    "returnToOrbit": "Return to orbit",
+    "selectedWork": "Selected photographs",
+    "photographs": "frames",
+    "openPhoto": "Open photograph",
+    "close": "Close",
+    "previous": "Previous photograph",
+    "next": "Next photograph"
+  },
+  "interaction": {
+    "swipeThreshold": 60
+  },
+  "sources": {
+    "lightroom": "../Foundry AI/photo_editing/output/portfolio-candidates-2026-09-07",
+    "beach": "../Foundry AI/photo_editing/output/beach-edits-2026-09-07"
+  },
+  "images": {
+    "max_source_pixels": 150000000,
+    "output_directory": "public/photos",
+    "public_path": "/photos",
+    "manifest": "src/data/photos.json",
+    "variants": [
+      {
+        "key": "small",
+        "width": 640,
+        "quality": 85
+      },
+      {
+        "key": "preview",
+        "width": 1280,
+        "quality": 88
+      },
+      {
+        "key": "large",
+        "width": 2560,
+        "quality": 92
+      }
+    ]
+  },
+  "photos": [
+    {
+      "collection": "lightroom",
+      "file": "DSC_2816.jpg",
+      "id": "milky-way",
+      "title": "Under the Milky Way",
+      "alt": "The bright core of the Milky Way above a dark mountain ridge, surrounded by a dense field of stars."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_2479.jpg",
+      "id": "last-light",
+      "title": "Last light on the mountains",
+      "alt": "Pink and gold clouds above a snow-capped mountain range and a green valley."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_2903.jpg",
+      "id": "open-water",
+      "title": "Open water",
+      "alt": "A small sailing ship on a vast blue sea beneath layered clouds."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_3160.jpg",
+      "id": "fjord-light",
+      "title": "Light across the fjord",
+      "alt": "Wooden cabins above a still fjord, with sunlight crossing the green mountains beyond."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_2970.jpg",
+      "id": "through-the-arch",
+      "title": "Through the arch",
+      "alt": "A stone archway frames a quiet waterfront, cobblestones, and golden evening light."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_3087.jpg",
+      "id": "curious-neighbor",
+      "title": "A curious neighbor",
+      "alt": "A close portrait of a horned sheep in warm light with trees softly blurred behind it."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_3325.jpg",
+      "id": "water-and-stone",
+      "title": "Water and stone",
+      "alt": "Waterfalls plunge into a deep green gorge, where a white river winds between cliffs."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_3158.jpg",
+      "id": "beneath-the-branches",
+      "title": "Beneath the branches",
+      "alt": "Overhanging branches frame a wooden cabin with mountains rising beyond."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_1506.jpg",
+      "id": "city-at-dusk",
+      "title": "The city at dusk",
+      "alt": "Ornate rooftops and a central dome beneath a pink and blue evening sky."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_1688.jpg",
+      "id": "after-hours",
+      "title": "After hours",
+      "alt": "Red and white light trails thread through a narrow street lined with golden buildings."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_0772.jpg",
+      "id": "watchful",
+      "title": "Watchful",
+      "alt": "A small tabby cat peeks over a stone ledge beside a fence and green foliage."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_1268.jpg",
+      "id": "alpine-spring",
+      "title": "Alpine spring",
+      "alt": "Pale purple flowers in a mountain meadow beneath rocky peaks and drifting clouds."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_0600.jpg",
+      "id": "sunbreak",
+      "title": "Sunbreak",
+      "alt": "A shaft of sunlight falls on a lakeside town and the mountain slopes behind it."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_1439.jpg",
+      "id": "quiet-canal",
+      "title": "A quiet canal",
+      "alt": "A narrow canal runs between pastel buildings beside a cobblestone path."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3436.jpg",
+      "id": "golden-hour",
+      "title": "Golden hour",
+      "alt": "Golden sunlight breaks through layered clouds and falls across the ocean."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3440.jpg",
+      "id": "coastal-layers",
+      "title": "Coastal layers",
+      "alt": "Dark coastal ridges rise through low mist beneath a luminous golden sky."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3445.jpg",
+      "id": "low-flight",
+      "title": "Low flight",
+      "alt": "A seabird glides low over softly lit waves and the shoreline."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3449.jpg",
+      "id": "along-the-shore",
+      "title": "Along the shore",
+      "alt": "A walker and a low-flying bird move along the beach beside softly glowing waves."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3463.jpg",
+      "id": "day-into-night",
+      "title": "Day into night",
+      "alt": "Brilliant red sunset clouds stretch above dark ocean water and a distant headland."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3494.jpg",
+      "id": "last-walk",
+      "title": "One last walk",
+      "alt": "A lone silhouette walks by blue surf beneath a pink sky and distant mountains."
+    }
+  ]
+}

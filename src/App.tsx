@@ -3,9 +3,14 @@ import { FactorioBlueprintPage } from "./components/FactorioBlueprintPage";
 import { HomePage } from "./components/HomePage";
 import { MarsTrackerPage } from "./components/MarsTrackerPage";
 import { VocabularyPage } from "./components/VocabularyPage";
+import { PhotosPage } from "./components/PhotosPage";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/";
+
+  if (path === "/photos") {
+    return <PhotosPage />;
+  }
 
   if (path === "/blog/parallel-betting") {
     return <ArticlePage />;

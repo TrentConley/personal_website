@@ -35,6 +35,10 @@ npm run preview
 
 The featured essay is available directly at `/blog/parallel-betting`.
 
+The photography portfolio is available at `/photos` and from the Photos link on the homepage. It includes 20 selected Lightroom photographs, responsive image sizes, and a full-screen viewer with keyboard and touch navigation.
+
+The curated selection, captions, source folders, and export settings are in `photos/config.yaml`. Web images and the page manifest are checked in, so a normal website build does not require access to Lightroom. To regenerate them after changing the selection, run `scripts/prepare_photos.py` with `uv` in an environment containing Pillow and PyYAML, passing `photos/config.yaml` as its argument. Source exports must exist in the configured folders; preparation fails if a source or its color profile is missing. Web copies preserve composition and color profiles while excluding EXIF metadata.
+
 The adaptive vocabulary tutor is available at `/projects/vocabulary`. It stores a learner's words and review history locally in the browser. Add `OPENAI_API_KEY` to the Vercel project's environment variables to enable semantic grading and generated examples; `OPENAI_VOCAB_MODEL` can optionally override the default model. Without a key, definitions and conservative local checks remain available.
 
 Fallback lexical definitions are provided by the [Datamuse API](https://www.datamuse.com/api/) and its Wiktionary/WordNet-derived metadata.

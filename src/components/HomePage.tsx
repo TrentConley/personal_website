@@ -21,6 +21,10 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
     <div className="orbit-page">
       <OrbitalField activePanel={activePanel} onSelect={setActivePanel} />
 
+      <a className="orbit-photos-link" href="/photos">
+        Photos <span aria-hidden="true">↗</span>
+      </a>
+
       <div
         className={`orbit-identity${activePanel ? " is-panel-open" : ""}`}
         aria-label="Trent Conley, AI Engineer at SpaceX"
