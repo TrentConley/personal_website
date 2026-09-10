@@ -1,0 +1,15 @@
+@import "./playground.css";
+
+.random-main { width:min(calc(100% - 80px),var(--random-width)); margin-inline:auto; padding:var(--random-top) 0 140px; }
+.random-list { list-style:none; margin:0; padding:0; }
+.random-list li { border-bottom:1px solid var(--play-line); }
+.random-list li:first-child { border-top:1px solid var(--play-line); }
+.random-link { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:var(--random-row-padding) 12px; color:var(--play-foreground); transition:background .2s; }
+.random-link-text { display:grid; gap:12px; min-width:0; }
+.random-title { font-size:var(--random-title-size); line-height:1.05; font-weight:400; letter-spacing:-.055em; }
+.random-description { color:var(--play-muted); font-size:.875rem; line-height:1.5; }
+.random-arrow { font-size:26px; color:var(--play-muted); transition:transform .2s,color .2s; }
+.random-link:hover,.random-link:focus-visible { background:var(--random-hover); }
+.random-link:hover .random-arrow,.random-link:focus-visible .random-arrow { transform:translate(3px,-3px); color:var(--play-foreground); }
+@media(max-width:700px) { .random-main { width:calc(100% - 40px); } .random-link { padding-inline:0; } }
+@media(prefers-reduced-motion:reduce) { .random-link,.random-arrow { transition:none; } }

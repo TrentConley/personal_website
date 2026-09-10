@@ -21,7 +21,9 @@
   },
   "sources": {
     "lightroom": "../Foundry AI/photo_editing/output/portfolio-candidates-2026-09-07",
-    "beach": "../Foundry AI/photo_editing/output/beach-edits-2026-09-07"
+    "beach": "../Foundry AI/photo_editing/output/beach-edits-2026-09-07",
+    "recent": "../Foundry AI/photo_editing/output/recent-imports-2026-09-07/edits",
+    "portfolio_2026_09_09": "../Foundry AI/photo_editing/output/website-expansion-2026-09-09/lightroom-exports"
   },
   "images": {
     "max_source_pixels": 150000000,
@@ -44,7 +46,11 @@
         "width": 2560,
         "quality": 92
       }
-    ]
+    ],
+    "default_preview_filter": "none",
+    "preview_filters": {
+      "milky-way": "brightness(1.5)"
+    }
   },
   "photos": [
     {
@@ -55,11 +61,46 @@
       "alt": "Pink and gold clouds above a snow-capped mountain range and a green valley."
     },
     {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2567.jpg",
+      "id": "mountain-local",
+      "title": "A mountain local",
+      "alt": "A shaggy llama looks into the camera with its ears spread against softly blurred Andean mountains."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2357.jpg",
+      "id": "colors-overhead",
+      "title": "Colors overhead",
+      "alt": "Colorful woven textiles hang above a narrow cobblestone street lined with warm stone walls."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2698.jpg",
+      "id": "machu-picchu",
+      "title": "Above the terraces",
+      "alt": "Sunlit stone terraces at Machu Picchu beneath a steep green peak and layered Andean mountains."
+    },
+    {
       "collection": "lightroom",
-      "file": "DSC_2816.jpg",
-      "id": "milky-way",
-      "title": "Under the Milky Way",
-      "alt": "The bright core of the Milky Way above a dark mountain ridge, surrounded by a dense field of stars."
+      "file": "DSC_2970.jpg",
+      "id": "through-the-arch",
+      "title": "Through the arch",
+      "alt": "A stone archway frames a quiet waterfront, cobblestones, and golden evening light."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_3285.jpg",
+      "id": "falling-water",
+      "title": "Falling water",
+      "alt": "A powerful white waterfall drops between dark, moss-covered rock walls into a pool below."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3440.jpg",
+      "id": "coastal-layers",
+      "title": "Coastal layers",
+      "alt": "Dark coastal ridges rise through low mist beneath a luminous golden sky."
     },
     {
       "collection": "lightroom",
@@ -70,45 +111,52 @@
     },
     {
       "collection": "lightroom",
+      "file": "DSC_2816.jpg",
+      "id": "milky-way",
+      "title": "Under the Milky Way",
+      "alt": "The bright core of the Milky Way above a dark mountain ridge, surrounded by a dense field of stars."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_1553.jpg",
+      "id": "blue-hour-streets",
+      "title": "Blue hour streets",
+      "alt": "Curving tram tracks and glowing street lamps pass ornate buildings beneath a pastel evening sky."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_0350.jpg",
+      "id": "city-local",
+      "title": "A city local",
+      "alt": "A pigeon with an orange eye and iridescent neck feathers stands before softly blurred cathedral spires."
+    },
+    {
+      "collection": "lightroom",
       "file": "DSC_3160.jpg",
       "id": "fjord-light",
       "title": "Light across the fjord",
       "alt": "Wooden cabins above a still fjord, with sunlight crossing the green mountains beyond."
     },
     {
-      "collection": "beach",
-      "file": "DSC_3440.jpg",
-      "id": "coastal-layers",
-      "title": "Coastal layers",
-      "alt": "Dark coastal ridges rise through low mist beneath a luminous golden sky."
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2832.jpg",
+      "id": "glacial-lake",
+      "title": "Still beneath the ice",
+      "alt": "A turquoise glacial lake reflects a broad snow-covered mountain wall under a deep blue sky."
     },
     {
-      "collection": "beach",
-      "file": "DSC_3445.jpg",
-      "id": "low-flight",
-      "title": "Low flight",
-      "alt": "A seabird glides low over softly lit waves and the shoreline."
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2604.jpg",
+      "id": "silk-and-stone",
+      "title": "Silk and stone",
+      "alt": "Long-exposure white water flows around dark rounded boulders in a shaded mountain stream."
     },
     {
-      "collection": "lightroom",
-      "file": "DSC_3325.jpg",
-      "id": "water-and-stone",
-      "title": "Water and stone",
-      "alt": "Waterfalls plunge into a deep green gorge, where a white river winds between cliffs."
-    },
-    {
-      "collection": "lightroom",
-      "file": "DSC_2970.jpg",
-      "id": "through-the-arch",
-      "title": "Through the arch",
-      "alt": "A stone archway frames a quiet waterfront, cobblestones, and golden evening light."
-    },
-    {
-      "collection": "beach",
-      "file": "DSC_3494.jpg",
-      "id": "last-walk",
-      "title": "One last walk",
-      "alt": "A lone silhouette walks by blue surf beneath a pink sky and distant mountains."
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_3130.jpg",
+      "id": "hillside-cabins",
+      "title": "Beneath the cliff",
+      "alt": "Small wooden cabins and grazing sheep sit on a bright green hillside beneath a towering rocky mountain."
     },
     {
       "collection": "lightroom",
@@ -119,10 +167,59 @@
     },
     {
       "collection": "lightroom",
-      "file": "DSC_3158.jpg",
-      "id": "beneath-the-branches",
-      "title": "Beneath the branches",
-      "alt": "Overhanging branches frame a wooden cabin with mountains rising beyond."
+      "file": "DSC_3325.jpg",
+      "id": "water-and-stone",
+      "title": "Water and stone",
+      "alt": "Waterfalls plunge into a deep green gorge, where a white river winds between cliffs."
+    },
+    {
+      "collection": "recent",
+      "file": "DSC_3528.jpg",
+      "id": "mountain-flight",
+      "title": "Mountain flight",
+      "alt": "A lone bird banks above layered blue mountain peaks beneath soft white clouds."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_2903.jpg",
+      "id": "open-water",
+      "title": "Open water",
+      "alt": "A small sailing ship on a vast blue sea beneath layered clouds."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_2488.jpg",
+      "id": "sunset-walker",
+      "title": "Toward the last light",
+      "alt": "A lone walker crosses an open mountain field beneath sweeping golden sunset clouds and a dark ridge."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_3107.jpg",
+      "id": "edge-of-the-fjord",
+      "title": "At the water's edge",
+      "alt": "A lone person stands on a small stone-edged point beside green fjord water and steep wooded mountains."
+    },
+    {
+      "collection": "portfolio_2026_09_09",
+      "file": "Portfolio_DSC_1186.jpg",
+      "id": "alpine-hut",
+      "title": "Under the spires",
+      "alt": "A small wooden hut stands in an alpine meadow below sunlit limestone spires and scattered clouds."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3449.jpg",
+      "id": "along-the-shore",
+      "title": "Along the shore",
+      "alt": "A walker and a low-flying bird move along the beach beside softly glowing waves."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3494.jpg",
+      "id": "last-walk",
+      "title": "One last walk",
+      "alt": "A lone silhouette walks by blue surf beneath a pink sky and distant mountains."
     },
     {
       "collection": "lightroom",
@@ -133,24 +230,17 @@
     },
     {
       "collection": "lightroom",
-      "file": "DSC_2903.jpg",
-      "id": "open-water",
-      "title": "Open water",
-      "alt": "A small sailing ship on a vast blue sea beneath layered clouds."
+      "file": "DSC_3158.jpg",
+      "id": "beneath-the-branches",
+      "title": "Beneath the branches",
+      "alt": "Overhanging branches frame a wooden cabin with mountains rising beyond."
     },
     {
-      "collection": "lightroom",
-      "file": "DSC_0772.jpg",
-      "id": "watchful",
-      "title": "Watchful",
-      "alt": "A small tabby cat peeks over a stone ledge beside a fence and green foliage."
-    },
-    {
-      "collection": "lightroom",
-      "file": "DSC_0600.jpg",
-      "id": "sunbreak",
-      "title": "Sunbreak",
-      "alt": "A shaft of sunlight falls on a lakeside town and the mountain slopes behind it."
+      "collection": "recent",
+      "file": "DSC_3544.jpg",
+      "id": "raven-in-flight",
+      "title": "Raven in flight",
+      "alt": "A black raven flies toward the camera with its wings tilted against pale blue sky and clouds."
     },
     {
       "collection": "beach",
@@ -158,20 +248,6 @@
       "id": "golden-hour",
       "title": "Golden hour",
       "alt": "Golden sunlight breaks through layered clouds and falls across the ocean."
-    },
-    {
-      "collection": "beach",
-      "file": "DSC_3463.jpg",
-      "id": "day-into-night",
-      "title": "Day into night",
-      "alt": "Brilliant red sunset clouds stretch above dark ocean water and a distant headland."
-    },
-    {
-      "collection": "beach",
-      "file": "DSC_3449.jpg",
-      "id": "along-the-shore",
-      "title": "Along the shore",
-      "alt": "A walker and a low-flying bird move along the beach beside softly glowing waves."
     },
     {
       "collection": "lightroom",
@@ -186,6 +262,191 @@
       "id": "quiet-canal",
       "title": "A quiet canal",
       "alt": "A narrow canal runs between pastel buildings beside a cobblestone path."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_0600.jpg",
+      "id": "sunbreak",
+      "title": "Sunbreak",
+      "alt": "A shaft of sunlight falls on a lakeside town and the mountain slopes behind it."
+    },
+    {
+      "collection": "lightroom",
+      "file": "DSC_0772.jpg",
+      "id": "watchful",
+      "title": "Watchful",
+      "alt": "A small tabby cat peeks over a stone ledge beside a fence and green foliage."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3463.jpg",
+      "id": "day-into-night",
+      "title": "Day into night",
+      "alt": "Brilliant red sunset clouds stretch above dark ocean water and a distant headland."
+    },
+    {
+      "collection": "beach",
+      "file": "DSC_3445.jpg",
+      "id": "low-flight",
+      "title": "Low flight",
+      "alt": "A seabird glides low over softly lit waves and the shoreline."
     }
-  ]
+  ],
+  "layout": {
+    "groups": [
+      {
+        "kind": "feature",
+        "photos": [
+          "last-light"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "mountain-local",
+          "colors-overhead"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "machu-picchu"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "through-the-arch",
+          "falling-water"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "coastal-layers",
+          "curious-neighbor"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "milky-way"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "blue-hour-streets",
+          "city-local"
+        ]
+      },
+      {
+        "kind": "quiet",
+        "photos": [
+          "fjord-light"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "glacial-lake",
+          "silk-and-stone"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "hillside-cabins",
+          "after-hours"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "water-and-stone"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "mountain-flight",
+          "open-water"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "sunset-walker",
+          "edge-of-the-fjord"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "alpine-hut",
+          "along-the-shore"
+        ]
+      },
+      {
+        "kind": "quiet",
+        "photos": [
+          "last-walk"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "city-at-dusk",
+          "beneath-the-branches"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "raven-in-flight",
+          "golden-hour"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "alpine-spring",
+          "quiet-canal"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "sunbreak",
+          "watchful"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "day-into-night",
+          "low-flight"
+        ]
+      }
+    ],
+    "theme": {
+      "--gallery-group-gap": "clamp(48px, 8vw, 112px)",
+      "--gallery-image-gap": "clamp(16px, 3vw, 44px)",
+      "--gallery-pair-width": "84%",
+      "--gallery-offset-width": "72%",
+      "--gallery-quiet-width": "78%",
+      "--gallery-stagger": "clamp(40px, 7vw, 108px)",
+      "--gallery-mobile-group-gap": "48px",
+      "--gallery-mobile-image-gap": "14px",
+      "--gallery-mobile-offset-width": "92%",
+      "--gallery-mobile-quiet-width": "94%",
+      "--gallery-mobile-stagger": "40px"
+    },
+    "image_sizes": {
+      "feature": "(max-width: 680px) calc(100vw - 32px), (max-width: 1440px) calc(100vw - 80px), 1360px",
+      "pair": "(max-width: 680px) 55vw, 50vw",
+      "offset": "(max-width: 680px) 45vw, 36vw",
+      "quiet": "(max-width: 680px) 94vw, 78vw"
+    }
+  }
 }

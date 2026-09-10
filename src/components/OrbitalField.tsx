@@ -8,7 +8,7 @@ import {
   renderMilkyWay,
 } from "../lib/skyProjection";
 
-export type OrbitPanel = "projects" | "writing" | "contact";
+export type OrbitPanel = "writing" | "contact";
 
 type OrbitalFieldProps = {
   activePanel: OrbitPanel | null;
@@ -43,20 +43,6 @@ type StarDiscovery = {
 
 // JPL Planetary Satellite Mean Elements, epoch 2000-01-01.5 TDB.
 const orbitItems: OrbitBody[] = [
-  {
-    id: "projects",
-    label: "Projects",
-    shortLabel: "P",
-    body: "Io",
-    semimajorAxisKm: 421_800,
-    eccentricity: 0.004,
-    periodDays: 1.762732,
-    argumentOfPeriapsisDegrees: 49.1,
-    meanAnomalyDegrees: 330.9,
-    inclinationDegrees: 0,
-    ascendingNodeDegrees: 0,
-    color: "#d8a24c",
-  },
   {
     id: "writing",
     label: "Writing",

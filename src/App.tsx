@@ -1,12 +1,22 @@
 import { ArticlePage } from "./components/ArticlePage";
-import { FactorioBlueprintPage } from "./components/FactorioBlueprintPage";
 import { HomePage } from "./components/HomePage";
-import { MarsTrackerPage } from "./components/MarsTrackerPage";
-import { VocabularyPage } from "./components/VocabularyPage";
 import { PhotosPage } from "./components/PhotosPage";
+import { PlaygroundPage } from "./components/PlaygroundPage";
+import { NotFoundPage } from "./components/NotFoundPage";
+import { RandomPage } from "./components/RandomPage";
+import { RandomToolPage } from "./components/RandomToolPage";
+import { random } from "./data/random";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/";
+
+  if (path === random.page.href) return <RandomPage />;
+  const tool = random.tools.find(item => item.href === path || item.aliases.includes(path));
+  if (tool) return <RandomToolPage id={tool.id} />;
+
+  if (path === "/orbit") {
+    return <HomePage />;
+  }
 
   if (path === "/photos") {
     return <PhotosPage />;
@@ -16,21 +26,13 @@ export default function App() {
     return <ArticlePage />;
   }
 
-  if (path === "/projects/factorio-blueprints") {
-    return <FactorioBlueprintPage />;
-  }
-
-  if (path === "/projects/mars-tracker") {
-    return <MarsTrackerPage />;
-  }
-
-  if (path === "/projects/vocabulary") {
-    return <VocabularyPage />;
-  }
-
   if (path === "/writing" || path === "/blog") {
-    return <HomePage initialPanel="writing" />;
+    return <ArticlePage />;
   }
 
-  return <HomePage />;
+  if (path === "/") {
+    return <PlaygroundPage />;
+  }
+
+  return <NotFoundPage />;
 }

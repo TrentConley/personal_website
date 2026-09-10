@@ -15,6 +15,7 @@ import type {
 } from "../factorio/chain/worker-types";
 import { BELT_TIERS, SIDES, type BeltTier, type Side } from "../factorio/core/types";
 import { FactorioBlueprintPreview } from "./FactorioBlueprintPreview";
+import { random } from "../data/random";
 
 const FEATURED_TARGETS = [
   "electronic-circuit",
@@ -273,8 +274,8 @@ export function FactorioBlueprintPage() {
   return (
     <div className="factorio-page">
       <nav className="factorio-nav">
-        <a className="factorio-nav__home" href="/" aria-label="Back to Trent Conley's homepage">
-          TC
+        <a className="factorio-nav__home" href={random.page.href} aria-label={random.labels.back} title={random.labels.back}>
+          ←
         </a>
         <div>
           <strong>Foundry</strong>

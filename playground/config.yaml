@@ -1,0 +1,136 @@
+{
+  "identity": {
+    "name": "Trent Conley",
+    "initials": "TC",
+    "role": "AI engineer at SpaceX",
+    "title": "Trent Conley",
+    "email": "mailto:trentconley@gmail.com",
+    "github": "https://github.com/TrentConley",
+    "orbit": "/orbit",
+    "writing": "/blog/parallel-betting",
+    "emailLabel": "trentconley@gmail.com"
+  },
+  "theme": {
+    "--play-background": "#111315",
+    "--play-foreground": "#f1f3f4",
+    "--play-muted": "#969ba2",
+    "--play-line": "#ffffff18",
+    "--play-accent": "#b9ff75",
+    "--play-contact-background": "#1b1e22",
+    "--play-contact-foreground": "#f1f3f4",
+    "--play-contact-muted": "#a6abb2"
+  },
+  "navigation": [
+    {
+      "id": "mix",
+      "label": "Home",
+      "href": "/"
+    },
+    {
+      "id": "photos",
+      "label": "Photos",
+      "href": "/photos"
+    },
+    {
+      "id": "writing",
+      "label": "Writing",
+      "href": "/blog/parallel-betting"
+    },
+    {
+      "id": "random",
+      "label": "Random",
+      "href": "/random"
+    }
+  ],
+  "labels": {
+    "photos": "Photographs",
+    "writing": "Writing",
+    "shuffle": "Shuffle",
+    "grid": "Grid",
+    "scatter": "Play",
+    "close": "Close",
+    "previous": "Previous photograph",
+    "next": "Next photograph",
+    "email": "Email Trent",
+    "github": "GitHub",
+    "orbit": "Explore the orbit",
+    "reset": "Reset positions",
+    "home": "Home",
+    "open": "Open",
+    "drag": "Drag to move. Tap to open.",
+    "menu": "Explore",
+    "allPhotos": "All photographs",
+    "keyboardDrag": "Use Alt and arrow keys to move a focused item.",
+    "mix": "Home",
+    "contact": "Contact"
+  },
+  "interaction": {
+    "dragThreshold": 6,
+    "swipeThreshold": 55,
+    "keyboardStep": 22,
+    "shuffleStep": 5,
+    "throwMultiplier": 110,
+    "maximumThrow": 100,
+    "visibleEdge": 48,
+    "topBoundary": 80,
+    "bottomBoundary": 100
+  },
+  "scene": [
+    {
+      "id": "last-light",
+      "x": 48,
+      "y": 49,
+      "w": 43,
+      "rotation": -4,
+      "mx": 49,
+      "my": 45,
+      "mw": 83
+    },
+    {
+      "id": "milky-way",
+      "x": 19,
+      "y": 19,
+      "w": 23,
+      "rotation": 6,
+      "mx": 23,
+      "my": 14,
+      "mw": 51
+    },
+    {
+      "id": "mountain-local",
+      "x": 80,
+      "y": 77,
+      "w": 21,
+      "rotation": 7,
+      "mx": 78,
+      "my": 78,
+      "mw": 43
+    },
+    {
+      "id": "machu-picchu",
+      "x": 79,
+      "y": 20,
+      "w": 29,
+      "rotation": -5,
+      "mx": 76,
+      "my": 23,
+      "mw": 63
+    },
+    {
+      "id": "raven-in-flight",
+      "x": 21,
+      "y": 82,
+      "w": 21,
+      "rotation": -7,
+      "mx": 23,
+      "my": 79,
+      "mw": 44
+    }
+  ],
+  "notFound": {
+    "title": "Page not found | Trent Conley",
+    "heading": "Page not found",
+    "linkLabel": "Back home",
+    "href": "/"
+  }
+}

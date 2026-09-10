@@ -1,0 +1,16 @@
+{
+  "page": { "title": "Random | Trent Conley", "heading": "Random", "href": "/random" },
+  "labels": { "back": "Back to Random", "loading": "Loading…", "loadError": "Could not open this tool." },
+  "theme": {
+    "--random-width": "900px",
+    "--random-top": "clamp(36px, 7vh, 80px)",
+    "--random-row-padding": "clamp(28px, 5vh, 48px)",
+    "--random-title-size": "clamp(32px, 6vw, 60px)",
+    "--random-hover": "#ffffff04"
+  },
+  "tools": [
+    { "id": "factorio", "title": "Factorio", "description": "Factory blueprints", "href": "/random/factorio", "aliases": ["/projects/factorio-blueprints"] },
+    { "id": "lexicon", "title": "Lexicon", "description": "Vocabulary practice", "href": "/random/lexicon", "aliases": ["/projects/vocabulary"] },
+    { "id": "mars", "title": "Mars, now", "description": "Earth–Mars geometry", "href": "/random/mars", "aliases": ["/projects/mars-tracker"] }
+  ]
+}

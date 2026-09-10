@@ -5,6 +5,7 @@ import {
   getOrbitTracks,
 } from "../lib/marsEphemeris";
 import { optimizeMarsTransfer } from "../lib/orbitalTransfer";
+import { random } from "../data/random";
 
 type ProjectedPoint = { x: number; y: number };
 
@@ -91,8 +92,8 @@ export function MarsTrackerPage() {
 
   return (
     <main className={`mars-tracker${detailsOpen ? " is-details-open" : ""}`}>
-      <a className="mars-tracker__mark" href="/" aria-label="Back to home">
-        TC
+      <a className="mars-tracker__mark" href={random.page.href} aria-label={random.labels.back} title={random.labels.back}>
+        ←
       </a>
 
       <button

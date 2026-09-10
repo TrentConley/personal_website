@@ -128,7 +128,7 @@ async function dictionaryWord(term: string): Promise<EnrichedWord | null> {
       (item) => item.definitions?.some((definition) => definition.definition),
     );
     const definition = meaning?.definitions?.find((item) => item.definition);
-    if (!definition?.definition) return null;
+    if (!meaning || !definition?.definition) return null;
     const examples =
       meaning?.definitions
         ?.map((item) => (item.example ? blankExample(item.example, term) : ""))

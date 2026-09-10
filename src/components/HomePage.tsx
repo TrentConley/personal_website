@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { projects } from "../data/profile";
 import { OrbitPanel, OrbitalField } from "./OrbitalField";
+import { journal } from "../data/journal";
+import { playground } from "../data/playground";
 
 type HomePageProps = {
   initialPanel?: OrbitPanel | null;
@@ -10,6 +11,7 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
   const [activePanel, setActivePanel] = useState<OrbitPanel | null>(initialPanel);
 
   useEffect(() => {
+    document.title = `${journal.identity.name} — ${journal.orbit.label}`;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setActivePanel(null);
     };
@@ -20,6 +22,8 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
   return (
     <div className="orbit-page">
       <OrbitalField activePanel={activePanel} onSelect={setActivePanel} />
+
+      <a className="orbit-journal-link" href="/" aria-label={playground.labels.home}>←</a>
 
       <a className="orbit-photos-link" href="/photos">
         Photos <span aria-hidden="true">↗</span>
@@ -48,33 +52,6 @@ export function HomePage({ initialPanel = null }: HomePageProps) {
             >
               ×
             </button>
-
-            {activePanel === "projects" ? (
-              <div className="orbit-panel__content">
-                <p className="orbit-panel__label">
-                  Projects
-                </p>
-                <div className="project-mini-list">
-                  {projects.map((project) => (
-                    <article key={project.name} className="project-mini">
-                      <h2>{project.name}</h2>
-                      <div>
-                        {project.links.map((link) => (
-                          <a
-                            key={link.url}
-                            href={link.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {link.label} ↗
-                          </a>
-                        ))}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ) : null}
 
             {activePanel === "writing" ? (
               <div className="orbit-panel__content">

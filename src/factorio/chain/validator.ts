@@ -177,7 +177,7 @@ export function validateFinalChainBlueprint(input: ValidationInput): ChainValida
   const entityCenters = new Set(centers);
   const missingPorts = [
     ...[...input.inputPositions].map(([material, position]) => ({ material, position })),
-    ...[...(input.additionalInputPositions ?? new Map())]
+    ...[...(input.additionalInputPositions ?? new Map<string, Array<{ x: number; y: number }>>())]
       .flatMap(([material, positions]) => positions.map((position) => ({ material, position }))),
     { material: input.plan.target, position: input.outputPosition },
   ].filter(({ position }) => !entityCenters.has(`${position.x},${position.y}`));

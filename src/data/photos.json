@@ -19,11 +19,169 @@
   "interaction": {
     "swipeThreshold": 60
   },
+  "layout": {
+    "groups": [
+      {
+        "kind": "feature",
+        "photos": [
+          "last-light"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "mountain-local",
+          "colors-overhead"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "machu-picchu"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "through-the-arch",
+          "falling-water"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "coastal-layers",
+          "curious-neighbor"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "milky-way"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "blue-hour-streets",
+          "city-local"
+        ]
+      },
+      {
+        "kind": "quiet",
+        "photos": [
+          "fjord-light"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "glacial-lake",
+          "silk-and-stone"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "hillside-cabins",
+          "after-hours"
+        ]
+      },
+      {
+        "kind": "feature",
+        "photos": [
+          "water-and-stone"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "mountain-flight",
+          "open-water"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "sunset-walker",
+          "edge-of-the-fjord"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "alpine-hut",
+          "along-the-shore"
+        ]
+      },
+      {
+        "kind": "quiet",
+        "photos": [
+          "last-walk"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "city-at-dusk",
+          "beneath-the-branches"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "raven-in-flight",
+          "golden-hour"
+        ]
+      },
+      {
+        "kind": "offset",
+        "photos": [
+          "alpine-spring",
+          "quiet-canal"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "sunbreak",
+          "watchful"
+        ]
+      },
+      {
+        "kind": "pair",
+        "photos": [
+          "day-into-night",
+          "low-flight"
+        ]
+      }
+    ],
+    "theme": {
+      "--gallery-group-gap": "clamp(48px, 8vw, 112px)",
+      "--gallery-image-gap": "clamp(16px, 3vw, 44px)",
+      "--gallery-pair-width": "84%",
+      "--gallery-offset-width": "72%",
+      "--gallery-quiet-width": "78%",
+      "--gallery-stagger": "clamp(40px, 7vw, 108px)",
+      "--gallery-mobile-group-gap": "48px",
+      "--gallery-mobile-image-gap": "14px",
+      "--gallery-mobile-offset-width": "92%",
+      "--gallery-mobile-quiet-width": "94%",
+      "--gallery-mobile-stagger": "40px"
+    },
+    "image_sizes": {
+      "feature": "(max-width: 680px) calc(100vw - 32px), (max-width: 1440px) calc(100vw - 80px), 1360px",
+      "pair": "(max-width: 680px) 55vw, 50vw",
+      "offset": "(max-width: 680px) 45vw, 36vw",
+      "quiet": "(max-width: 680px) 94vw, 78vw"
+    }
+  },
   "photos": [
     {
       "id": "last-light",
       "title": "Last light on the mountains",
       "alt": "Pink and gold clouds above a snow-capped mountain range and a green valley.",
+      "previewFilter": "none",
       "width": 9429,
       "height": 5304,
       "small": "/photos/last-light-640.jpg",
@@ -31,69 +189,43 @@
       "large": "/photos/last-light-2560.jpg"
     },
     {
-      "id": "milky-way",
-      "title": "Under the Milky Way",
-      "alt": "The bright core of the Milky Way above a dark mountain ridge, surrounded by a dense field of stars.",
-      "width": 12032,
-      "height": 8021,
-      "small": "/photos/milky-way-640.jpg",
-      "preview": "/photos/milky-way-1280.jpg",
-      "large": "/photos/milky-way-2560.jpg"
+      "id": "mountain-local",
+      "title": "A mountain local",
+      "alt": "A shaggy llama looks into the camera with its ears spread against softly blurred Andean mountains.",
+      "previewFilter": "none",
+      "width": 3730,
+      "height": 2731,
+      "small": "/photos/mountain-local-640.jpg",
+      "preview": "/photos/mountain-local-1280.jpg",
+      "large": "/photos/mountain-local-2560.jpg"
     },
     {
-      "id": "curious-neighbor",
-      "title": "A curious neighbor",
-      "alt": "A close portrait of a horned sheep in warm light with trees softly blurred behind it.",
-      "width": 10040,
-      "height": 8032,
-      "small": "/photos/curious-neighbor-640.jpg",
-      "preview": "/photos/curious-neighbor-1280.jpg",
-      "large": "/photos/curious-neighbor-2560.jpg"
+      "id": "colors-overhead",
+      "title": "Colors overhead",
+      "alt": "Colorful woven textiles hang above a narrow cobblestone street lined with warm stone walls.",
+      "previewFilter": "none",
+      "width": 2981,
+      "height": 4000,
+      "small": "/photos/colors-overhead-640.jpg",
+      "preview": "/photos/colors-overhead-1280.jpg",
+      "large": "/photos/colors-overhead-2560.jpg"
     },
     {
-      "id": "fjord-light",
-      "title": "Light across the fjord",
-      "alt": "Wooden cabins above a still fjord, with sunlight crossing the green mountains beyond.",
-      "width": 12032,
-      "height": 8032,
-      "small": "/photos/fjord-light-640.jpg",
-      "preview": "/photos/fjord-light-1280.jpg",
-      "large": "/photos/fjord-light-2560.jpg"
-    },
-    {
-      "id": "coastal-layers",
-      "title": "Coastal layers",
-      "alt": "Dark coastal ridges rise through low mist beneath a luminous golden sky.",
-      "width": 6016,
-      "height": 3589,
-      "small": "/photos/coastal-layers-640.jpg",
-      "preview": "/photos/coastal-layers-1280.jpg",
-      "large": "/photos/coastal-layers-2560.jpg"
-    },
-    {
-      "id": "low-flight",
-      "title": "Low flight",
-      "alt": "A seabird glides low over softly lit waves and the shoreline.",
-      "width": 6016,
-      "height": 4016,
-      "small": "/photos/low-flight-640.jpg",
-      "preview": "/photos/low-flight-1280.jpg",
-      "large": "/photos/low-flight-2560.jpg"
-    },
-    {
-      "id": "water-and-stone",
-      "title": "Water and stone",
-      "alt": "Waterfalls plunge into a deep green gorge, where a white river winds between cliffs.",
-      "width": 12032,
-      "height": 8032,
-      "small": "/photos/water-and-stone-640.jpg",
-      "preview": "/photos/water-and-stone-1280.jpg",
-      "large": "/photos/water-and-stone-2560.jpg"
+      "id": "machu-picchu",
+      "title": "Above the terraces",
+      "alt": "Sunlit stone terraces at Machu Picchu beneath a steep green peak and layered Andean mountains.",
+      "previewFilter": "none",
+      "width": 4000,
+      "height": 2510,
+      "small": "/photos/machu-picchu-640.jpg",
+      "preview": "/photos/machu-picchu-1280.jpg",
+      "large": "/photos/machu-picchu-2560.jpg"
     },
     {
       "id": "through-the-arch",
       "title": "Through the arch",
       "alt": "A stone archway frames a quiet waterfront, cobblestones, and golden evening light.",
+      "previewFilter": "none",
       "width": 4016,
       "height": 6016,
       "small": "/photos/through-the-arch-640.jpg",
@@ -101,19 +233,120 @@
       "large": "/photos/through-the-arch-2560.jpg"
     },
     {
-      "id": "last-walk",
-      "title": "One last walk",
-      "alt": "A lone silhouette walks by blue surf beneath a pink sky and distant mountains.",
-      "width": 5056,
-      "height": 3371,
-      "small": "/photos/last-walk-640.jpg",
-      "preview": "/photos/last-walk-1280.jpg",
-      "large": "/photos/last-walk-2560.jpg"
+      "id": "falling-water",
+      "title": "Falling water",
+      "alt": "A powerful white waterfall drops between dark, moss-covered rock walls into a pool below.",
+      "previewFilter": "none",
+      "width": 2670,
+      "height": 4000,
+      "small": "/photos/falling-water-640.jpg",
+      "preview": "/photos/falling-water-1280.jpg",
+      "large": "/photos/falling-water-2560.jpg"
+    },
+    {
+      "id": "coastal-layers",
+      "title": "Coastal layers",
+      "alt": "Dark coastal ridges rise through low mist beneath a luminous golden sky.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 3589,
+      "small": "/photos/coastal-layers-640.jpg",
+      "preview": "/photos/coastal-layers-1280.jpg",
+      "large": "/photos/coastal-layers-2560.jpg"
+    },
+    {
+      "id": "curious-neighbor",
+      "title": "A curious neighbor",
+      "alt": "A close portrait of a horned sheep in warm light with trees softly blurred behind it.",
+      "previewFilter": "none",
+      "width": 10040,
+      "height": 8032,
+      "small": "/photos/curious-neighbor-640.jpg",
+      "preview": "/photos/curious-neighbor-1280.jpg",
+      "large": "/photos/curious-neighbor-2560.jpg"
+    },
+    {
+      "id": "milky-way",
+      "title": "Under the Milky Way",
+      "alt": "The bright core of the Milky Way above a dark mountain ridge, surrounded by a dense field of stars.",
+      "previewFilter": "brightness(1.5)",
+      "width": 12032,
+      "height": 8021,
+      "small": "/photos/milky-way-640.jpg",
+      "preview": "/photos/milky-way-1280.jpg",
+      "large": "/photos/milky-way-2560.jpg"
+    },
+    {
+      "id": "blue-hour-streets",
+      "title": "Blue hour streets",
+      "alt": "Curving tram tracks and glowing street lamps pass ornate buildings beneath a pastel evening sky.",
+      "previewFilter": "none",
+      "width": 2670,
+      "height": 4000,
+      "small": "/photos/blue-hour-streets-640.jpg",
+      "preview": "/photos/blue-hour-streets-1280.jpg",
+      "large": "/photos/blue-hour-streets-2560.jpg"
+    },
+    {
+      "id": "city-local",
+      "title": "A city local",
+      "alt": "A pigeon with an orange eye and iridescent neck feathers stands before softly blurred cathedral spires.",
+      "previewFilter": "none",
+      "width": 2670,
+      "height": 4000,
+      "small": "/photos/city-local-640.jpg",
+      "preview": "/photos/city-local-1280.jpg",
+      "large": "/photos/city-local-2560.jpg"
+    },
+    {
+      "id": "fjord-light",
+      "title": "Light across the fjord",
+      "alt": "Wooden cabins above a still fjord, with sunlight crossing the green mountains beyond.",
+      "previewFilter": "none",
+      "width": 12032,
+      "height": 8032,
+      "small": "/photos/fjord-light-640.jpg",
+      "preview": "/photos/fjord-light-1280.jpg",
+      "large": "/photos/fjord-light-2560.jpg"
+    },
+    {
+      "id": "glacial-lake",
+      "title": "Still beneath the ice",
+      "alt": "A turquoise glacial lake reflects a broad snow-covered mountain wall under a deep blue sky.",
+      "previewFilter": "none",
+      "width": 4000,
+      "height": 2670,
+      "small": "/photos/glacial-lake-640.jpg",
+      "preview": "/photos/glacial-lake-1280.jpg",
+      "large": "/photos/glacial-lake-2560.jpg"
+    },
+    {
+      "id": "silk-and-stone",
+      "title": "Silk and stone",
+      "alt": "Long-exposure white water flows around dark rounded boulders in a shaded mountain stream.",
+      "previewFilter": "none",
+      "width": 4000,
+      "height": 2527,
+      "small": "/photos/silk-and-stone-640.jpg",
+      "preview": "/photos/silk-and-stone-1280.jpg",
+      "large": "/photos/silk-and-stone-2560.jpg"
+    },
+    {
+      "id": "hillside-cabins",
+      "title": "Beneath the cliff",
+      "alt": "Small wooden cabins and grazing sheep sit on a bright green hillside beneath a towering rocky mountain.",
+      "previewFilter": "none",
+      "width": 2670,
+      "height": 4000,
+      "small": "/photos/hillside-cabins-640.jpg",
+      "preview": "/photos/hillside-cabins-1280.jpg",
+      "large": "/photos/hillside-cabins-2560.jpg"
     },
     {
       "id": "after-hours",
       "title": "After hours",
       "alt": "Red and white light trails thread through a narrow street lined with golden buildings.",
+      "previewFilter": "none",
       "width": 4016,
       "height": 6016,
       "small": "/photos/after-hours-640.jpg",
@@ -121,29 +354,32 @@
       "large": "/photos/after-hours-2560.jpg"
     },
     {
-      "id": "beneath-the-branches",
-      "title": "Beneath the branches",
-      "alt": "Overhanging branches frame a wooden cabin with mountains rising beyond.",
-      "width": 6016,
-      "height": 4016,
-      "small": "/photos/beneath-the-branches-640.jpg",
-      "preview": "/photos/beneath-the-branches-1280.jpg",
-      "large": "/photos/beneath-the-branches-2560.jpg"
+      "id": "water-and-stone",
+      "title": "Water and stone",
+      "alt": "Waterfalls plunge into a deep green gorge, where a white river winds between cliffs.",
+      "previewFilter": "none",
+      "width": 12032,
+      "height": 8032,
+      "small": "/photos/water-and-stone-640.jpg",
+      "preview": "/photos/water-and-stone-1280.jpg",
+      "large": "/photos/water-and-stone-2560.jpg"
     },
     {
-      "id": "city-at-dusk",
-      "title": "The city at dusk",
-      "alt": "Ornate rooftops and a central dome beneath a pink and blue evening sky.",
-      "width": 5129,
-      "height": 4016,
-      "small": "/photos/city-at-dusk-640.jpg",
-      "preview": "/photos/city-at-dusk-1280.jpg",
-      "large": "/photos/city-at-dusk-2560.jpg"
+      "id": "mountain-flight",
+      "title": "Mountain flight",
+      "alt": "A lone bird banks above layered blue mountain peaks beneath soft white clouds.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 3048,
+      "small": "/photos/mountain-flight-640.jpg",
+      "preview": "/photos/mountain-flight-1280.jpg",
+      "large": "/photos/mountain-flight-2560.jpg"
     },
     {
       "id": "open-water",
       "title": "Open water",
       "alt": "A small sailing ship on a vast blue sea beneath layered clouds.",
+      "previewFilter": "none",
       "width": 4694,
       "height": 3129,
       "small": "/photos/open-water-640.jpg",
@@ -151,49 +387,43 @@
       "large": "/photos/open-water-2560.jpg"
     },
     {
-      "id": "watchful",
-      "title": "Watchful",
-      "alt": "A small tabby cat peeks over a stone ledge beside a fence and green foliage.",
-      "width": 5454,
-      "height": 4016,
-      "small": "/photos/watchful-640.jpg",
-      "preview": "/photos/watchful-1280.jpg",
-      "large": "/photos/watchful-2560.jpg"
+      "id": "sunset-walker",
+      "title": "Toward the last light",
+      "alt": "A lone walker crosses an open mountain field beneath sweeping golden sunset clouds and a dark ridge.",
+      "previewFilter": "none",
+      "width": 2711,
+      "height": 4000,
+      "small": "/photos/sunset-walker-640.jpg",
+      "preview": "/photos/sunset-walker-1280.jpg",
+      "large": "/photos/sunset-walker-2560.jpg"
     },
     {
-      "id": "sunbreak",
-      "title": "Sunbreak",
-      "alt": "A shaft of sunlight falls on a lakeside town and the mountain slopes behind it.",
-      "width": 6016,
-      "height": 4016,
-      "small": "/photos/sunbreak-640.jpg",
-      "preview": "/photos/sunbreak-1280.jpg",
-      "large": "/photos/sunbreak-2560.jpg"
+      "id": "edge-of-the-fjord",
+      "title": "At the water's edge",
+      "alt": "A lone person stands on a small stone-edged point beside green fjord water and steep wooded mountains.",
+      "previewFilter": "none",
+      "width": 2670,
+      "height": 4000,
+      "small": "/photos/edge-of-the-fjord-640.jpg",
+      "preview": "/photos/edge-of-the-fjord-1280.jpg",
+      "large": "/photos/edge-of-the-fjord-2560.jpg"
     },
     {
-      "id": "golden-hour",
-      "title": "Golden hour",
-      "alt": "Golden sunlight breaks through layered clouds and falls across the ocean.",
-      "width": 6016,
-      "height": 4016,
-      "small": "/photos/golden-hour-640.jpg",
-      "preview": "/photos/golden-hour-1280.jpg",
-      "large": "/photos/golden-hour-2560.jpg"
-    },
-    {
-      "id": "day-into-night",
-      "title": "Day into night",
-      "alt": "Brilliant red sunset clouds stretch above dark ocean water and a distant headland.",
-      "width": 6016,
-      "height": 3447,
-      "small": "/photos/day-into-night-640.jpg",
-      "preview": "/photos/day-into-night-1280.jpg",
-      "large": "/photos/day-into-night-2560.jpg"
+      "id": "alpine-hut",
+      "title": "Under the spires",
+      "alt": "A small wooden hut stands in an alpine meadow below sunlit limestone spires and scattered clouds.",
+      "previewFilter": "none",
+      "width": 4000,
+      "height": 2670,
+      "small": "/photos/alpine-hut-640.jpg",
+      "preview": "/photos/alpine-hut-1280.jpg",
+      "large": "/photos/alpine-hut-2560.jpg"
     },
     {
       "id": "along-the-shore",
       "title": "Along the shore",
       "alt": "A walker and a low-flying bird move along the beach beside softly glowing waves.",
+      "previewFilter": "none",
       "width": 6016,
       "height": 2806,
       "small": "/photos/along-the-shore-640.jpg",
@@ -201,9 +431,65 @@
       "large": "/photos/along-the-shore-2560.jpg"
     },
     {
+      "id": "last-walk",
+      "title": "One last walk",
+      "alt": "A lone silhouette walks by blue surf beneath a pink sky and distant mountains.",
+      "previewFilter": "none",
+      "width": 5056,
+      "height": 3371,
+      "small": "/photos/last-walk-640.jpg",
+      "preview": "/photos/last-walk-1280.jpg",
+      "large": "/photos/last-walk-2560.jpg"
+    },
+    {
+      "id": "city-at-dusk",
+      "title": "The city at dusk",
+      "alt": "Ornate rooftops and a central dome beneath a pink and blue evening sky.",
+      "previewFilter": "none",
+      "width": 5129,
+      "height": 4016,
+      "small": "/photos/city-at-dusk-640.jpg",
+      "preview": "/photos/city-at-dusk-1280.jpg",
+      "large": "/photos/city-at-dusk-2560.jpg"
+    },
+    {
+      "id": "beneath-the-branches",
+      "title": "Beneath the branches",
+      "alt": "Overhanging branches frame a wooden cabin with mountains rising beyond.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 4016,
+      "small": "/photos/beneath-the-branches-640.jpg",
+      "preview": "/photos/beneath-the-branches-1280.jpg",
+      "large": "/photos/beneath-the-branches-2560.jpg"
+    },
+    {
+      "id": "raven-in-flight",
+      "title": "Raven in flight",
+      "alt": "A black raven flies toward the camera with its wings tilted against pale blue sky and clouds.",
+      "previewFilter": "none",
+      "width": 3927,
+      "height": 2621,
+      "small": "/photos/raven-in-flight-640.jpg",
+      "preview": "/photos/raven-in-flight-1280.jpg",
+      "large": "/photos/raven-in-flight-2560.jpg"
+    },
+    {
+      "id": "golden-hour",
+      "title": "Golden hour",
+      "alt": "Golden sunlight breaks through layered clouds and falls across the ocean.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 4016,
+      "small": "/photos/golden-hour-640.jpg",
+      "preview": "/photos/golden-hour-1280.jpg",
+      "large": "/photos/golden-hour-2560.jpg"
+    },
+    {
       "id": "alpine-spring",
       "title": "Alpine spring",
       "alt": "Pale purple flowers in a mountain meadow beneath rocky peaks and drifting clouds.",
+      "previewFilter": "none",
       "width": 4016,
       "height": 6016,
       "small": "/photos/alpine-spring-640.jpg",
@@ -214,11 +500,56 @@
       "id": "quiet-canal",
       "title": "A quiet canal",
       "alt": "A narrow canal runs between pastel buildings beside a cobblestone path.",
+      "previewFilter": "none",
       "width": 4016,
       "height": 6016,
       "small": "/photos/quiet-canal-640.jpg",
       "preview": "/photos/quiet-canal-1280.jpg",
       "large": "/photos/quiet-canal-2560.jpg"
+    },
+    {
+      "id": "sunbreak",
+      "title": "Sunbreak",
+      "alt": "A shaft of sunlight falls on a lakeside town and the mountain slopes behind it.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 4016,
+      "small": "/photos/sunbreak-640.jpg",
+      "preview": "/photos/sunbreak-1280.jpg",
+      "large": "/photos/sunbreak-2560.jpg"
+    },
+    {
+      "id": "watchful",
+      "title": "Watchful",
+      "alt": "A small tabby cat peeks over a stone ledge beside a fence and green foliage.",
+      "previewFilter": "none",
+      "width": 5454,
+      "height": 4016,
+      "small": "/photos/watchful-640.jpg",
+      "preview": "/photos/watchful-1280.jpg",
+      "large": "/photos/watchful-2560.jpg"
+    },
+    {
+      "id": "day-into-night",
+      "title": "Day into night",
+      "alt": "Brilliant red sunset clouds stretch above dark ocean water and a distant headland.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 3447,
+      "small": "/photos/day-into-night-640.jpg",
+      "preview": "/photos/day-into-night-1280.jpg",
+      "large": "/photos/day-into-night-2560.jpg"
+    },
+    {
+      "id": "low-flight",
+      "title": "Low flight",
+      "alt": "A seabird glides low over softly lit waves and the shoreline.",
+      "previewFilter": "none",
+      "width": 6016,
+      "height": 4016,
+      "small": "/photos/low-flight-640.jpg",
+      "preview": "/photos/low-flight-1280.jpg",
+      "large": "/photos/low-flight-2560.jpg"
     }
   ]
 }

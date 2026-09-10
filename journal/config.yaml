@@ -1,0 +1,96 @@
+{
+  "theme": {
+    "--journal-paper": "#f3f0e8",
+    "--journal-ink": "#282c29",
+    "--journal-muted": "#777a70",
+    "--journal-copper": "#a25c3c",
+    "--journal-line": "#d9d8ce",
+    "--journal-night": "#171d1c",
+    "--journal-cream": "#f0ede4"
+  },
+  "identity": {
+    "name": "Trent Conley",
+    "initials": "TC",
+    "role": "AI Engineer at SpaceX",
+    "title": "Trent Conley \u2014 A field journal",
+    "description": "Photographs and writing by Trent Conley, an AI engineer at SpaceX."
+  },
+  "navigation": [
+    {
+      "label": "Writing",
+      "href": "/#writing",
+      "id": "writing"
+    },
+    {
+      "label": "Photos",
+      "href": "/photos",
+      "id": "photos"
+    },
+    {
+      "label": "About",
+      "href": "/#about",
+      "id": "about"
+    }
+  ],
+  "orbit": {
+    "href": "/orbit",
+    "label": "Explore the orbit",
+    "eyebrow": "A different perspective",
+    "title": "Another way to look around.",
+    "description": "An interactive sky with orbiting moons and a few discoveries."
+  },
+  "hero": {
+    "eyebrow": "Engineering \u00b7 Writing \u00b7 Photography",
+    "lines": [
+      "Looking closer."
+    ],
+    "intro": "I\u2019m an AI engineer at SpaceX. Here are the places I photograph and the ideas I write about.",
+    "photoId": "last-light",
+    "photoLabel": "From the field",
+    "linkLabel": "Selected photographs"
+  },
+  "writing": {
+    "number": "01",
+    "label": "Writing",
+    "title": "Thinking out loud.",
+    "date": "July 26, 2026",
+    "duration": "8 min read",
+    "headline": "Would you risk everything on a coin flip if the math told you to?",
+    "description": "Expected value, repeated bets, and the difference between a good bet and a good life.",
+    "href": "/blog/parallel-betting",
+    "linkLabel": "Read the essay",
+    "photoId": "curious-neighbor"
+  },
+  "photography": {
+    "number": "02",
+    "label": "Photography",
+    "title": "Out in the world.",
+    "description": "Mountains, small encounters, and the last light of the day.",
+    "photoIds": [
+      "milky-way",
+      "coastal-layers",
+      "fjord-light"
+    ],
+    "linkLabel": "View all photographs",
+    "href": "/photos"
+  },
+  "about": {
+    "number": "03",
+    "label": "About",
+    "title": "Curiosity is the through line.",
+    "description": "I work on AI at SpaceX. Outside work, I write and take my camera along when I travel.",
+    "contactLabel": "Say hello",
+    "email": "trentconley@gmail.com",
+    "github": "https://github.com/TrentConley",
+    "githubLabel": "GitHub",
+    "footer": "Engineering, writing, and looking around.",
+    "year": 2026
+  },
+  "labels": {
+    "home": "Home",
+    "backToJournal": "Back to the journal",
+    "menu": "Main navigation",
+    "skip": "Skip to content",
+    "photoGallery": "View the photography collection"
+  }
+}

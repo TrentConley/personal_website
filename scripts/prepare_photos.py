@@ -19,10 +19,17 @@ settings = config["images"]
 Image.MAX_IMAGE_PIXELS = settings["max_source_pixels"]
 destination = root / settings["output_directory"]
 destination.mkdir(parents=True, exist_ok=True)
-manifest = {key: config[key] for key in ("page", "labels", "interaction")}
+manifest = {key: config[key] for key in ("page", "labels", "interaction", "layout")}
 manifest["photos"] = []
 ids = [photo["id"] for photo in config["photos"]]
 assert ids and len(ids) == len(set(ids)), "Photo IDs must be present and unique"
+group_ids = [photo_id for group in config["layout"]["groups"] for photo_id in group["photos"]]
+assert group_ids == ids, "Gallery layout must contain every photo exactly once in display order"
+for group in config["layout"]["groups"]:
+    expected = {"feature": 1, "quiet": 1, "pair": 2, "offset": 2}[group["kind"]]
+    assert len(group["photos"]) == expected, f"Invalid gallery group: {group}"
+    assert config["layout"]["image_sizes"][group["kind"]], "Image sizes must be configured"
+assert set(settings["preview_filters"]).issubset(ids), "Preview filter references an unknown photo"
 
 for photo in config["photos"]:
     source = (root / config["sources"][photo["collection"]] / photo["file"]).resolve()
@@ -31,6 +38,7 @@ for photo in config["photos"]:
         icc_profile = original.info["icc_profile"]
         im = ImageOps.exif_transpose(original).convert("RGB")
         record = {key: photo[key] for key in ("id", "title", "alt")}
+        record["previewFilter"] = settings["preview_filters"].get(photo["id"], settings["default_preview_filter"])
         record.update(width=im.width, height=im.height)
         for variant in settings["variants"]:
             resized = im.copy()

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { random } from "../data/random";
 import {
   applyGrade,
   formatDue,
@@ -113,7 +114,7 @@ async function enrichInBatches(
 
 function Wordmark() {
   return (
-    <a className="vocab-mark" href="/" aria-label="Back to Trent Conley">
+    <a className="vocab-mark" href={random.page.href} aria-label={random.labels.back} title={random.labels.back}>
       TC
     </a>
   );

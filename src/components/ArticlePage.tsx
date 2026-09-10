@@ -1,4 +1,10 @@
 import { type ReactNode, useEffect } from "react";
+import { PlaygroundHeader } from "./PlaygroundHeader";
+import { SiteNavigation } from "./SiteNavigation";
+import { journalTheme } from "../data/journal";
+import { playgroundTheme } from "../data/playground";
+import "../playground.css";
+import "../journal.css";
 
 const mediumUrl =
   "https://medium.com/@trentconley/would-you-risk-everything-on-a-coin-flip-if-the-math-told-you-to-89aa39a5a6bc";
@@ -24,13 +30,8 @@ export function ArticlePage() {
   }, []);
 
   return (
-    <div className="article-view">
-      <nav className="article-nav" aria-label="Article navigation">
-        <a href="/" className="article-nav__mark" aria-label="Return to orbit">
-          TC
-        </a>
-        <a href="/writing">Return to orbit</a>
-      </nav>
+    <div className="article-view journal-article playground-article" style={{...journalTheme,...playgroundTheme}}>
+      <PlaygroundHeader />
 
       <main className="article-shell">
         <article className="article-paper">
@@ -353,6 +354,7 @@ export function ArticlePage() {
           </div>
         </article>
       </main>
+      <SiteNavigation active="writing" />
     </div>
   );
 }

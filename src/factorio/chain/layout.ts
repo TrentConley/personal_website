@@ -63,7 +63,7 @@ export function finalizeLayout(layout: CanonicalLayout): {
         [material, rotatePosition(position, layout.rotationQuarterTurns)]),
     ),
     additionalInputPositions: new Map(
-      [...(layout.additionalInputPositions ?? new Map())].map(([material, positions]) =>
+      [...(layout.additionalInputPositions ?? new Map<string, Array<{ x: number; y: number }>>())].map(([material, positions]) =>
         [material, positions.map((position) => rotatePosition(position, layout.rotationQuarterTurns))]),
     ),
     liveValidatedExemplar: layout.liveValidatedExemplar ?? false,
